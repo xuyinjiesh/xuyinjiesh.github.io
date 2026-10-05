@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title data-identity="title">{{NAME}} 的个人主页</title>
+<meta name="description" data-identity="description" content="{{NAME}} 的个人主页：一个住在聊天窗口里的主页。关于我、项目作品、最近动态与联系方式。">
+<!-- 主题必须在首绘前解析，防 FOUC：同步加载规则表并立刻应用 -->
+<script src="js/themes.js"></script>
+<script>
+  (function () {
+    var t = ThemeEngine.resolve(new Date());
+    ThemeEngine.apply(t);
+    // 站内动效开关在首绘前应用，防动画闪烁；未设置则跟随系统
+    try {
+      var m = localStorage.getItem('homepage.motion.v1');
+      if (m === 'on') document.documentElement.dataset.motion = 'full';
+      else if (m === 'off') document.documentElement.dataset.motion = 'reduce';
+    } catch (e) {}
+  })();
+</script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 背景层：壁纸 + 渐变 + 粒子 + 暗角，聊天窗浮在上面“沉”进去 -->
+  <div class="bg-wallpaper" aria-hidden="true"></div>
+  <div class="bg-gradient" aria-hidden="true"></div>
+  <canvas id="particles" aria-hidden="true"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <main class="chat-window" aria-label="与站主的对话">
+    <header class="chat-header">
+      <div class="avatar" id="avatar" aria-hidden="true">👋</div>
+      <div class="peer">
+        <span class="peer-name" id="peer-name">我</span>
+        <span class="peer-status" id="peer-status">在线</span>
+      </div>
+      <button id="weather-toggle" class="ghost-btn" type="button" aria-pressed="false" title="跟随当地天气与蓝调时刻（需定位授权）">天气</button>
+      <button id="music-toggle" class="ghost-btn" type="button" aria-pressed="false" title="切换氛围音乐">音乐</button>
+      <button id="motion-toggle" class="ghost-btn" type="button" aria-pressed="true" title="切换页面动效（优先级高于系统设置）">动效</button>
+      <button id="clear-chat" class="ghost-btn" type="button" title="清空对话">清空对话</button>
+    </header>
+
+    <ol id="messages" class="messages" aria-live="polite"></ol>
+
+    <div id="quick-replies" class="quick-replies" role="group" aria-label="快捷回复"></div>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <input id="composer-input" type="text" placeholder="说点什么…" maxlength="200" aria-label="输入消息">
+      <button type="submit" aria-label="发送">发送</button>
+    </form>
+  </main>
+
+  <!-- 无障碍 / SEO：核心内容以语义化 HTML 直出，视觉上隐藏。
+       身份信息不写死在这里：带 data-identity 标记的节点由 js/identity.js 在运行时填充，
+       并在 CI 部署时做一次构建期替换（见 .github/scripts/inject_identity.py）。
+       未配置的项会连同 data-identity-item 容器一起被移除，不会留下占位符。 -->
+  <section class="sr-only" aria-label="站点内容摘要">
+    <h1><span data-identity="name">{{NAME}}</span> 的个人主页</h1>
+    <p>你好，我是 <span data-identity="name">{{NAME}}</span>，一名开发者。这里是我的个人主页，以聊天窗口的形式呈现。</p>
+    <h2>项目</h2>
+    <ul>
+      <li data-identity-item="github"><a data-identity="github" href="https://github.com/{{GITHUB}}">GitHub 上的项目</a></li>
+    </ul>
+    <h2>联系方式</h2>
+    <ul>
+      <li data-identity-item="github"><a data-identity="github" href="https://github.com/{{GITHUB}}">GitHub</a></li>
+      <li data-identity-item="email"><a data-identity="email" href="mailto:{{EMAIL}}">{{EMAIL}}</a></li>
+    </ul>
+  </section>
+
+  <noscript>
+    <section style="position:fixed;inset:0;background:#111;color:#eee;padding:2rem;overflow:auto">
+      <h1><span data-identity="name">{{NAME}}</span> 的个人主页</h1>
+      <p>你好，我是 <span data-identity="name">{{NAME}}</span>。这个主页需要启用 JavaScript 才能体验聊天界面，以下是要点：</p>
+      <ul>
+        <li data-identity-item="github">GitHub：<a data-identity="github" href="https://github.com/{{GITHUB}}"><span data-identity="githubText">github.com/{{GITHUB}}</span></a></li>
+        <li data-identity-item="email">邮箱：<a data-identity="email" href="mailto:{{EMAIL}}">{{EMAIL}}</a></li>
+      </ul>
+    </section>
+  </noscript>
+
+  <script src="js/identity.local.js"></script>
+  <script src="js/identity.js"></script>
+  <script src="js/content.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/liuyao.js"></script>
+  <script src="js/spire.js"></script>
+  <script src="js/chat.js"></script>
+  <script>window.applyIdentity();</script>
+</body>
+</html>

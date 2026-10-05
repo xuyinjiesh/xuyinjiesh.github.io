@@ -1,0 +1,337 @@
+/* 聊天式主页 · 皮肤全部由 CSS 变量驱动，变量在 js/themes.js 里按主题注入 */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  color: var(--text);
+  overflow: hidden;
+  background: var(--bg-2);
+}
+
+/* ---- 背景层 ---- */
+/* 壁纸：图片路径由主题注入 --wallpaper（见 js/themes.js），无壁纸时此层为空 */
+.bg-wallpaper {
+  position: fixed; inset: 0;
+  background: var(--wallpaper, none) center / cover no-repeat;
+  opacity: 0;
+  transition: opacity .8s ease;
+}
+html[data-wallpaper] .bg-wallpaper { opacity: 1; }
+.bg-gradient {
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(120% 90% at 70% 10%, color-mix(in srgb, var(--bg-1) 80%, transparent), transparent 70%),
+    linear-gradient(160deg, var(--bg-1), var(--bg-2));
+  animation: breathe 14s ease-in-out infinite alternate;
+}
+/* 有壁纸时渐变退为半透明叠加色：保留主题色调，让壁纸透出来 */
+html[data-wallpaper] .bg-gradient {
+  background:
+    radial-gradient(120% 90% at 70% 10%, color-mix(in srgb, var(--bg-1) 45%, transparent), transparent 70%),
+    linear-gradient(160deg, color-mix(in srgb, var(--bg-1) 55%, transparent), color-mix(in srgb, var(--bg-2) 72%, transparent));
+}
+@keyframes breathe {
+  from { filter: brightness(1); }
+  to   { filter: brightness(1.12); }
+}
+#particles { position: fixed; inset: 0; pointer-events: none; }
+.vignette {
+  position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 45%, transparent 55%, rgba(0,0,0,.45));
+}
+
+/* ---- 聊天窗口：无边框、毛玻璃，沉进背景里 ---- */
+.chat-window {
+  position: relative;
+  height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--bubble-bg) 55%, transparent);
+  backdrop-filter: blur(calc(var(--bubble-blur) * 1.4)) saturate(1.2);
+  -webkit-backdrop-filter: blur(calc(var(--bubble-blur) * 1.4)) saturate(1.2);
+  box-shadow: 0 0 80px rgba(0,0,0,.25);
+}
+
+.chat-header {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .9rem 1.1rem;
+  background: var(--bubble-bg);
+  backdrop-filter: blur(var(--bubble-blur));
+  -webkit-backdrop-filter: blur(var(--bubble-blur));
+}
+.avatar {
+  width: 42px; height: 42px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 1.4rem;
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  box-shadow: 0 2px 10px rgba(0,0,0,.2);
+}
+.peer { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.peer-name { font-weight: 600; }
+.peer-status { font-size: .75rem; color: var(--text-dim); }
+.ghost-btn {
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--text-dim); font-size: .78rem;
+  padding: .35rem .6rem; border-radius: 999px;
+}
+.ghost-btn:hover { color: var(--text); background: var(--bubble-bg); }
+
+/* ---- 消息流 ---- */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  padding: 1.2rem 1rem .6rem;
+  display: flex; flex-direction: column; gap: .55rem;
+  scrollbar-width: thin;
+}
+
+.msg { display: flex; flex-direction: column; max-width: 82%; animation: pop .28s ease both; }
+.msg.bot { align-self: flex-start; align-items: flex-start; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+@keyframes pop {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.bubble {
+  padding: .6rem .9rem;
+  border-radius: 18px;
+  line-height: 1.65;
+  font-size: .95rem;
+  word-break: break-word;
+  box-shadow: 0 3px 14px rgba(0,0,0,.18); /* 柔和阴影而非描边 */
+}
+.msg.bot .bubble {
+  background: var(--bubble-bg);
+  backdrop-filter: blur(var(--bubble-blur));
+  -webkit-backdrop-filter: blur(var(--bubble-blur));
+  border-bottom-left-radius: 6px;
+}
+.msg.user .bubble {
+  background: var(--bubble-user-bg);
+  backdrop-filter: blur(var(--bubble-blur));
+  -webkit-backdrop-filter: blur(var(--bubble-blur));
+  border-bottom-right-radius: 6px;
+}
+.bubble a { color: var(--accent); }
+
+.ts { font-size: .68rem; color: var(--text-dim); margin-top: .2rem; padding: 0 .3rem; }
+
+/* 红包气泡 */
+.msg.hongbao .bubble {
+  background: linear-gradient(150deg, #d4362a, #a01812);
+  color: #ffe9b0;
+  border: 1px solid rgba(255, 215, 120, .5);
+}
+
+/* 正在输入… */
+.typing .bubble { display: flex; gap: 5px; padding: .8rem 1rem; }
+.typing .bubble i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-dim);
+  animation: bounce 1.1s infinite ease-in-out;
+}
+.typing .bubble i:nth-child(2) { animation-delay: .15s; }
+.typing .bubble i:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: .5; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* 卡片（项目 / 名片） */
+.cards { display: flex; flex-direction: column; gap: .5rem; min-width: 220px; }
+.card {
+  display: flex; flex-direction: column; gap: .15rem;
+  padding: .65rem .8rem;
+  border-radius: 12px;
+  background: rgba(255,255,255,.07);
+  text-decoration: none;
+  color: var(--text);
+  transition: background .2s, transform .2s;
+}
+.card:hover { background: rgba(255,255,255,.14); transform: translateY(-1px); }
+.card strong { font-size: .92rem; }
+.card span { font-size: .8rem; color: var(--text-dim); }
+.card-tag {
+  align-self: flex-start;
+  font-size: .68rem !important;
+  color: var(--accent) !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 999px;
+  padding: 0 .45rem;
+  margin-bottom: .15rem;
+}
+
+/* 六爻排盘：气泡里的等宽文本块 + 复制按钮 */
+.bubble pre.chart {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .76rem;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  margin: .15rem 0;
+}
+.copy-chart {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: transparent;
+  color: var(--accent);
+  font-size: .75rem;
+  padding: .25rem .8rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.copy-chart:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* ---- 文字爬塔：结构化战场面板 ---- */
+/* 语义配色：面板徽章 / 卡牌按钮徽章 / 日志数字高亮共用一套。
+   徽章底色用 currentColor 调出来，所以 12 套主题自动适配，不用逐主题写颜色。 */
+.sb-b, .lg { font-weight: 600; font-style: normal; }
+.sb-b {
+  display: inline-flex; align-items: center; gap: .18rem;
+  padding: .1rem .42rem;
+  border-radius: 999px;
+  font-size: .7rem;
+  color: var(--text);
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 32%, transparent);
+  white-space: nowrap;
+}
+/* 语义色必须排在 .sb-b 之后，否则会被上面的 color 覆盖 */
+.sb-dmg, .sb-atk, .lg-dmg { color: #ff8f8f; }
+.sb-blk, .lg-blk { color: #7cc4ff; }
+.sb-cost, .lg-cost { color: #ffd166; }
+.sb-vuln, .lg-vuln { color: #ffa657; }
+.sb-weak, .lg-weak { color: #bfaeff; }
+.sb-heal, .lg-heal { color: #7ee787; }
+.sb-buff { color: #ff9de2; }
+.lg-hp { color: #ffb3b3; }
+
+.sb { display: flex; flex-direction: column; gap: .35rem; min-width: 232px; font-size: .8rem; }
+.sb-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; font-size: .7rem; color: var(--text-dim); letter-spacing: .02em; }
+.sb-floor { color: var(--accent); font-weight: 700; }
+.sb-row {
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  padding: .4rem .5rem; border-radius: 10px;
+  background: rgba(255,255,255,.06);
+  border-left: 3px solid transparent;
+}
+.sb-me { border-left-color: var(--accent); }
+.sb-foe { border-left-color: #ff8f8f; }
+.sb-who { font-weight: 700; white-space: nowrap; }
+.sb-chips { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+
+/* 血条：绿=你 / 红=敌人，血量低于 25% 转告警色 */
+.sb-hp { position: relative; flex: 1 1 84px; min-width: 84px; height: 17px; border-radius: 999px; background: rgba(255,255,255,.13); overflow: hidden; }
+.sb-hp > i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 999px; background: linear-gradient(90deg, #2f9e5f, #5ed18b); transition: width .35s ease; }
+.sb-foe .sb-hp > i { background: linear-gradient(90deg, #a8342e, #e5604f); }
+.sb-me .sb-hp.low > i { background: linear-gradient(90deg, #c0392b, #ff6b6b); }
+.sb-hp > b { position: relative; display: block; line-height: 17px; text-align: center; font-size: .68rem; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+
+/* 能量：点亮的 ⚡ 就是剩余能量，一眼看出一回合能打几张 */
+.sb-energy .pip { font-size: .62rem; opacity: .25; }
+.sb-energy .pip.on { opacity: 1; }
+.sb-energy > b { font-size: .68rem; opacity: .75; }
+.sb-foot { display: flex; flex-wrap: wrap; gap: .55rem; font-size: .68rem; color: var(--text-dim); }
+.sb-foot > span { white-space: nowrap; }
+
+.sb-result { text-align: center; font-weight: 700; padding: .4rem; border-radius: 12px; font-size: .92rem; }
+.sb-win { color: #ffd166; background: color-mix(in srgb, #ffd166 15%, transparent); border: 1px solid color-mix(in srgb, #ffd166 35%, transparent); }
+.sb-lose { color: #ff8f8f; background: color-mix(in srgb, #ff8f8f 15%, transparent); border: 1px solid color-mix(in srgb, #ff8f8f 35%, transparent); }
+.sb-note { font-size: .74rem; color: var(--text-dim); padding: 0 .2rem; }
+.sb-loot { display: flex; flex-wrap: wrap; gap: .3rem; }
+.sb-card { display: inline-flex; align-items: center; gap: .25rem; padding: .22rem .5rem; border-radius: 8px; background: rgba(255,255,255,.07); font-size: .74rem; }
+
+/* 卡牌按钮：名字 + 徽章；能量不足时压暗但仍可点（点了会说明为什么打不出去） */
+.quick-replies button.spire-action { text-align: left; white-space: normal; max-width: 100%; border-radius: 14px; font-size: .82rem; }
+.quick-replies button.sa-card { display: inline-flex; align-items: center; gap: .3rem; padding: .38rem .7rem; }
+.sa-name { font-weight: 700; }
+.sa-desc { font-size: .7rem; color: var(--text-dim); }
+.sa-off { opacity: .5; }
+
+/* 面板的等宽文本版：旧存档里的消息仍用它，也是 render() 的兜底样式 */
+.bubble pre.chart.spire { line-height: 1.5; font-size: .78rem; }
+
+/* ---- 快捷回复：主入口 ---- */
+.quick-replies {
+  display: flex; flex-wrap: wrap; gap: .5rem;
+  padding: .6rem 1rem .2rem;
+}
+.quick-replies button {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--bubble-bg);
+  backdrop-filter: blur(var(--bubble-blur));
+  -webkit-backdrop-filter: blur(var(--bubble-blur));
+  color: var(--text);
+  font-size: .85rem;
+  padding: .4rem .9rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .2s, transform .15s;
+}
+.quick-replies button:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.quick-replies button:active { transform: scale(.96); }
+.quick-replies button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- 输入框 ---- */
+.composer {
+  display: flex; gap: .5rem;
+  padding: .7rem 1rem calc(.7rem + env(safe-area-inset-bottom));
+}
+.composer input {
+  flex: 1; min-width: 0;
+  border: 0; outline: none;
+  border-radius: 999px;
+  padding: .65rem 1.1rem;
+  font-size: .95rem;
+  color: var(--text);
+  background: var(--bubble-bg);
+  backdrop-filter: blur(var(--bubble-blur));
+  -webkit-backdrop-filter: blur(var(--bubble-blur));
+}
+.composer input::placeholder { color: var(--text-dim); }
+.composer button {
+  border: 0; cursor: pointer;
+  border-radius: 999px;
+  padding: 0 1.2rem;
+  font-size: .9rem;
+  color: #1a1a1a;
+  background: var(--accent);
+  transition: filter .2s, transform .15s;
+}
+.composer button:hover { filter: brightness(1.1); }
+.composer button:active { transform: scale(.95); }
+
+/* ---- 无障碍 ---- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+/* 动效开关：html[data-motion] 是站内显式设置（js/chat.js 写入），优先于系统偏好 */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="full"]) .bg-gradient { animation: none; }
+  html:not([data-motion="full"]) .msg { animation: none; }
+  html:not([data-motion="full"]) .typing .bubble i { animation: none; }
+  html:not([data-motion="full"]) * { transition: none !important; }
+}
+html[data-motion="reduce"] .bg-gradient { animation: none; }
+html[data-motion="reduce"] .msg { animation: none; }
+html[data-motion="reduce"] .typing .bubble i { animation: none; }
+html[data-motion="reduce"] * { transition: none !important; }
+
+@media (max-width: 560px) {
+  .chat-window { max-width: none; box-shadow: none; }
+  .msg { max-width: 88%; }
+  .sb { min-width: 0; }
+  .sb-row { padding: .35rem .42rem; }
+  .sb-hp { flex-basis: 70px; min-width: 70px; }
+}

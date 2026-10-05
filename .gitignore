@@ -1,0 +1,8 @@
+firework-simulator
+
+# 真实身份信息（本地维护 / CI 注入），永不提交，避免污染 git 历史
+js/identity.local.js
+
+# CI 部署暂存目录
+_site/
+__pycache__/

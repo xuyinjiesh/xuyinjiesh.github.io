@@ -1,0 +1,67 @@
+# 部署到 GitHub Pages。
+#
+# 为什么不沿用「Deploy from a branch」：那种模式下 js/identity.local.js 必须提交，
+# 真实邮箱会永久留在公开的 git 历史里。改成 Actions 部署后，真实值在构建时从
+# 仓库变量/密钥注入，只出现在部署产物中，git 历史里从头到尾没有它。
+#
+# ── 一次性设置 ────────────────────────────────────────────────
+# 1. Settings → Secrets and variables → Actions → Variables 页，加三条：
+#      SITE_NAME   = Yinjie Xu
+#      SITE_GITHUB = xuyinjiesh
+#      SITE_EMAIL  = 你的邮箱
+#    邮箱不需要保密，所以统一放 Variables，不占用 Secrets。
+# 2. Settings → Pages → Build and deployment → Source 选「GitHub Actions」
+#
+# 漏配某一项不会让部署失败，但对应条目会从页面上消失——
+# 构建脚本会把没用上的占位符清掉，绝不把 {{XXX}} 暴露给访客。
+#
+# ── 日常改资料 ────────────────────────────────────────────────
+# 本地：只改 js/identity.local.js（已被 gitignore，改它不产生任何提交）
+# 线上：改上面那三个 Variables，重新跑一次 workflow
+# ──────────────────────────────────────────────────────────────
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # 只复制公开静态资源，避免把 .git / .github / firework-simulator 带进产物
+      - name: 暂存站点
+        run: |
+          mkdir -p _site
+          cp -r index.html css js assets _site/
+
+      - name: 注入身份信息
+        env:
+          SITE_NAME: ${{ vars.SITE_NAME }}
+          SITE_EMAIL: ${{ vars.SITE_EMAIL }}
+          SITE_GITHUB: ${{ vars.SITE_GITHUB }}
+        run: python3 .github/scripts/inject_identity.py _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
