@@ -335,3 +335,41 @@ html[data-motion="reduce"] * { transition: none !important; }
   .sb-row { padding: .35rem .42rem; }
   .sb-hp { flex-basis: 70px; min-width: 70px; }
 }
+
+/* ---- 私信小纸条：气泡里的小表单 ---- */
+/* 宽度用 vw 兜底，窄屏也不会把气泡撑破（.msg 在手机上只有 88% 宽） */
+.note-card { display: flex; flex-direction: column; gap: .5rem; width: min(320px, 58vw); }
+.note-tip { font-size: .8rem; color: var(--text-dim); line-height: 1.55; }
+.note-row { display: flex; flex-direction: column; gap: .25rem; font-size: .78rem; color: var(--text-dim); }
+.note-row input, .note-row textarea {
+  font: inherit; color: var(--text);
+  background: rgba(255,255,255,.08);
+  border: 1px solid color-mix(in srgb, var(--text-dim) 35%, transparent);
+  border-radius: 10px;
+  padding: .45rem .6rem;
+}
+.note-row textarea { resize: vertical; }
+.note-row input::placeholder, .note-row textarea::placeholder {
+  color: color-mix(in srgb, var(--text-dim) 70%, transparent);
+}
+.note-row input:focus, .note-row textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 1px;
+}
+/* 蜜罐：真人看不见；脚本填了 Web3Forms 会直接丢弃这次提交 */
+.note-hp { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.note-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.note-count { font-size: .72rem; color: var(--text-dim); }
+.note-foot button {
+  font: inherit; cursor: pointer;
+  padding: .35rem .9rem;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.note-foot button:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.note-foot button:disabled { opacity: .55; cursor: default; }
+.note-status { font-size: .75rem; color: var(--text-dim); min-height: 1em; }
+.note-status.ok { color: var(--accent); }
+.note-status.err { color: #ff9b9b; }

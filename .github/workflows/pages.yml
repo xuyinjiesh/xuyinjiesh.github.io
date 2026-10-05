@@ -10,14 +10,18 @@
 #      SITE_GITHUB = xuyinjiesh
 #      SITE_EMAIL  = 你的邮箱
 #    邮箱不需要保密，所以统一放 Variables，不占用 Secrets。
-# 2. Settings → Pages → Build and deployment → Source 选「GitHub Actions」
+# 2. Secrets 页加一条（「私信小纸条」用，缺失则该功能整体隐身，页面不会坏）：
+#      WEB3FORMS_KEY = Web3Forms 的 access key
+#    官方说它是公钥、可以公开，但拿到它就能往你邮箱发信，能力等同于邮箱本身，
+#    所以和 SITE_EMAIL 一样只存在部署产物里，不进 git 历史。
+# 3. Settings → Pages → Build and deployment → Source 选「GitHub Actions」
 #
 # 漏配某一项不会让部署失败，但对应条目会从页面上消失——
 # 构建脚本会把没用上的占位符清掉，绝不把 {{XXX}} 暴露给访客。
 #
 # ── 日常改资料 ────────────────────────────────────────────────
 # 本地：只改 js/identity.local.js（已被 gitignore，改它不产生任何提交）
-# 线上：改上面那三个 Variables，重新跑一次 workflow
+# 线上：改上面那几个 Variables / Secrets，重新跑一次 workflow
 # ──────────────────────────────────────────────────────────────
 name: Deploy to GitHub Pages
 
@@ -57,6 +61,7 @@ jobs:
           SITE_NAME: ${{ vars.SITE_NAME }}
           SITE_EMAIL: ${{ vars.SITE_EMAIL }}
           SITE_GITHUB: ${{ vars.SITE_GITHUB }}
+          SITE_WEB3FORMS_KEY: ${{ secrets.WEB3FORMS_KEY }}
         run: python3 .github/scripts/inject_identity.py _site
 
       - uses: actions/upload-pages-artifact@v3

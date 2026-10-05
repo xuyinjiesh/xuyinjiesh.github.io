@@ -576,6 +576,16 @@
     return spireBegin();
   }
 
+  // ---- 私信小纸条：访客写留言，直接进站主邮箱 ----
+  function startNote() {
+    if (!window.Note) return ['小纸条模块没加载出来，刷新试试？'];
+    if (!window.Note.ready()) return ['小纸条还没接通，站主配好密钥就能用了。'];
+    return [
+      '给你一张小纸条——写完点「递出去」，内容会直接进我邮箱，别人看不到。',
+      { html: window.Note.card() }
+    ];
+  }
+
   // ---- 意图 ----
   function projectCards() {
     var html = '<div class="cards">';
@@ -612,6 +622,8 @@
         return startLiuyao();
       case 'spire':
         return startSpire();
+      case 'note':
+        return startNote();
       case 'bainian':
         return [
           '给你拜年啦！🎊',
@@ -674,9 +686,15 @@
 
   // ---- 快捷回复 ----
   // 传 items 时渲染临时按钮（占卜流程用，带 action）；不传则回到当前主题的常驻按钮
+  // 小纸条入口：密钥配好了才出现，附在常驻快捷回复最后（各主题通用，不用逐主题改）
+  function noteEntry() {
+    if (!SITE.note || !window.Note || !window.Note.ready() || !SITE.note.quickReply) return [];
+    return [{ label: SITE.note.quickReply, intent: 'note' }];
+  }
+
   function renderQuickReplies(items) {
     $quick.innerHTML = '';
-    (items && items.length ? items : theme.quickReplies).forEach(function (q) {
+    (items && items.length ? items : theme.quickReplies.concat(noteEntry())).forEach(function (q) {
       var btn = document.createElement('button');
       btn.type = 'button';
       // html 用于带徽章的按钮（爬塔的卡牌），label 同时作为读屏名称和点击后的回显

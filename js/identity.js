@@ -12,11 +12,15 @@
 (function () {
   'use strict';
 
-  // 刻意只放非敏感项。邮箱留空，真实邮箱永远不进入 git 历史。
+  // 刻意只放非敏感项。邮箱与 Web3Forms 密钥留空，真实值永远不进入 git 历史。
   var DEFAULTS = {
     name: 'Yinjie Xu',
     email: '',
-    github: 'xuyinjiesh'
+    github: 'xuyinjiesh',
+    // 「私信小纸条」用的 Web3Forms access key。官方说它是公钥、可以公开，
+    // 但拿到它就等于能往站主邮箱发信，能力和 email 本身一样，所以同等对待：
+    // 本地放 js/identity.local.js，线上由 CI 注入。
+    web3formsKey: ''
   };
 
   var injected = window.IDENTITY || {};

@@ -23,6 +23,22 @@
       unlocksTheme: 'birthday'   // 解锁后切换到的隐藏主题
     },
 
+    // 「私信小纸条」：访客在聊天里写留言，经 Web3Forms 转发成邮件到站主邮箱。
+    // accessKey 来自身份层（本地 js/identity.local.js，线上 CI 注入），不进 git 历史；
+    // 没配密钥就整个功能隐身——既不显示入口，也不会让人白写一通。
+    // 逻辑在 js/note.js，这里只放文案和参数。
+    note: {
+      enabled: !!ID.web3formsKey,
+      endpoint: 'https://api.web3forms.com/submit',
+      accessKey: ID.web3formsKey || '',
+      subject: '【小纸条】来自个人主页的新留言',
+      fromName: '个人主页 · 小纸条',
+      maxLength: 500,
+      cooldownMs: 60 * 1000,      // 同一浏览器两次投递的最短间隔
+      quickReply: '写张小纸条',    // 常驻快捷回复里的入口名，留空则不显示
+      intro: '这张纸条只发给站主看，不会公开显示；不想留名字和邮箱也可以直接写。'
+    },
+
     profile: {
       name: ID.name,
       // 「你是谁」：逐条冒出的自述
@@ -106,6 +122,10 @@
       {
         keys: ['爬塔', '爬个塔', '杀戮尖塔', '尖塔', '打牌', '卡牌', 'spire'],
         intent: 'spire'
+      },
+      {
+        keys: ['纸条', '小纸条', '留言', '私信', 'note', 'message'],
+        intent: 'note'
       },
       {
         keys: ['你是谁', '介绍', '关于你'],
