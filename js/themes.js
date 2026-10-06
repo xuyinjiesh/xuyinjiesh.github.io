@@ -260,6 +260,7 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'fireflies', density: 16 },
+      music: "https://dl.musopen.org/recordings/85484622-ca89-44b4-aa6e-7d1607abe1cf.mp3?filename=2688_prelude-to-the-afternoon-4f784f81-2089-4ac4-9378-8c84eee06168.mp3",
       persona: { name: '我', avatar: '🍉', status: '在线' },
       typingDelay: [400, 900],
       greetings: [
@@ -278,6 +279,8 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'leaves', density: 12 },
+      // music: 'https://library.classicalmusicarchive.org/music/HM%20Collection/Classicals.de%20-%20Satie%20-%20Gymnopedie%20No.%201.mp3',
+      music: 'https://library.classicalmusicarchive.org/music/HM%20Collection/Classicals.de%20-%20Satie%20-%20Gnossienne%20No.%201.mp3',
       persona: { name: '我', avatar: '🍂', status: '在线' },
       typingDelay: [500, 1000],
       greetings: [
@@ -296,6 +299,7 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'snow', density: 40 },
+      music: "https://library.classicalmusicarchive.org/music/HM%20Collection/Classicals.de%20-%20Debussy%20-%20Preludes%2C%20Livre%201%20-%206.%20Des%20pas%20sur%20la%20neige%20-%20L.117.mp3",
       persona: { name: '我', avatar: '❄️', status: '在线' },
       typingDelay: [500, 1000],
       greetings: [
