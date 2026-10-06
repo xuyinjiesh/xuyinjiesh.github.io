@@ -201,6 +201,7 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'snow', density: 40 },
+      music: "https://archive.org/download/BachOrganWorksByJamesKibbie/BWV0645.m4a",
       persona: { name: '我', avatar: '🎄', status: '在线' },
       typingDelay: [400, 900],
       greetings: [

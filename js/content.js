@@ -10,6 +10,9 @@
 
   var ID = window.IDENTITY || {};
   var GITHUB_URL = ID.github ? 'https://github.com/' + ID.github : '';
+  // 音频素材署名的权威出处。CI 会把整个 assets/ 一起发布，所以站内相对路径
+  // 本地和线上都好用，也不用去猜仓库名（GitHub Pages 会把 .md 当纯文本渲染）。
+  var CREDITS_URL = 'assets/audio/CREDITS.md';
 
   window.SITE = {
     // 口令解锁：源码里只放口令的 SHA-256 哈希，口令本身永远不要提交进仓库。
@@ -111,9 +114,19 @@
         reply: ['抬头看看月亮吧，我们看的是同一颗。🌕']
       },
       {
-        // 音效素材署名（CC BY 4.0 要求）
+        // 音效 / 背景音乐素材署名（CC BY、CC BY-NC、CC BY-NC-ND 均要求保留署名）
+        // 权威出处是 assets/audio/CREDITS.md，这里只给摘要；新增曲目时两处一起改。
         keys: ['音效', '音乐', '致谢', 'credit'],
-        reply: ['雨声音效：<a href="https://freesound.org/people/InspectorJ/sounds/346642/" target="_blank" rel="noopener">"Rain on Windows, Interior, A.wav"</a> by InspectorJ (www.jshaw.co.uk)，来自 Freesound.org（CC BY 4.0）。']
+        reply: [
+          '雨声音效：<a href="https://freesound.org/people/InspectorJ/sounds/346642/" target="_blank" rel="noopener">"Rain on Windows, Interior, A.wav"</a> by InspectorJ (www.jshaw.co.uk)，来自 Freesound.org（CC BY 4.0）。',
+          '背景音乐按主题切换，都取自公开曲库：<br>' +
+            '· 春节 / 深夜 — Pixabay 曲库（Pixabay Content License）<br>' +
+            '· 夏日 — Debussy《牧神午后前奏曲》，Musopen（公共领域）<br>' +
+            '· 秋日 — Satie《Gnossienne No. 1》，录音 by Gregor Quendel / Classicals.de（CC BY-NC 4.0）<br>' +
+            '· 冬日 — Debussy《雪上足迹》，录音 by Gregor Quendel / Classicals.de（CC BY-NC 4.0）<br>' +
+            '· 圣诞 — Bach BWV 645，管风琴 by James Kibbie，Internet Archive（CC BY-NC-ND 3.0）',
+          '完整的来源、许可与署名格式见 <a href="' + CREDITS_URL + '" target="_blank" rel="noopener">assets/audio/CREDITS.md</a>。'
+        ]
       },
       {
         keys: ['占卜', '算卦', '起卦', '六爻', '占一卦', '摇一卦', '摇卦', '卜一卦'],
