@@ -7,6 +7,8 @@
  * 由调用方按“跟随天气”开关喂入 mood（见 js/chat.js）。
  * 烟花音效：assets/audio/fireworks-<n>.wav（程序合成），由粒子爆发事件触发，归总开关管。
  * 浏览器禁止手势前播放有声内容，play() 被拒时自动等待首次手势。
+ * 切走标签页/切到别的 App：不暂停，只把音乐压低到 DUCK_VOLUME，回来再淡回原音量；
+ * 同时用 MediaSession 把曲目信息交给系统，锁屏与系统媒体控件可持续控制。
  * 是否启用由调用方按站内开关决定（见 js/chat.js）。
  */
 (function () {
@@ -15,6 +17,8 @@
   var VOLUME = 0.3;
   var SFX_VOLUME = 0.15;
   var FADE_MS = 1500;
+  var DUCK_VOLUME = 0.05; // 页面不可见时的音乐音量（不暂停，切回来无缝恢复）
+  var DUCK_FADE_MS = 600;
 
   var el = null;        // 音乐层
   var sfx = null;       // 天气音效层
@@ -26,14 +30,15 @@
   var candidates = [];
   var candidateIdx = 0;
   var fades = { music: null, sfx: null };
-  var pausedHidden = { music: false, sfx: false };
+  var mediaSessionReady = false;
   var waitingGesture = false;
 
-  function fadeTo(key, elm, target, done) {
+  function fadeTo(key, elm, target, done, ms) {
     if (fades[key]) cancelAnimationFrame(fades[key]);
+    var dur = ms || FADE_MS;
     var from = elm.volume, t0 = performance.now();
     function step(now) {
-      var k = Math.min((now - t0) / FADE_MS, 1);
+      var k = Math.min((now - t0) / dur, 1);
       elm.volume = from + (target - from) * k;
       if (k < 1) fades[key] = requestAnimationFrame(step);
       else { fades[key] = null; if (done) done(); }
@@ -63,17 +68,56 @@
     document.addEventListener('keydown', once);
   }
 
+  // 页面不可见：不暂停，只把音乐压低（sfx 音量本就极低，不必跟着压），切回来淡回原音量。
+  // 这样切标签页/切到别的 App 时音乐仍在，配合 MediaSession 手机锁屏也能继续。
   function onVisibility() {
+    if (!enabled || !el) return;
     if (document.hidden) {
-      pausedHidden.music = !!(el && !el.paused);
-      pausedHidden.sfx = !!(sfx && !sfx.paused);
-      if (pausedHidden.music) el.pause();
-      if (pausedHidden.sfx) sfx.pause();
+      // 只有总开关开着才压：关着的时候 el 可能只是被淡到 0，压上来会自己出声
+      if (enabled && !el.paused) fadeTo('music', el, DUCK_VOLUME, null, DUCK_FADE_MS);
     } else {
-      if (pausedHidden.music) tryPlay(el);
-      if (pausedHidden.sfx) tryPlay(sfx);
-      pausedHidden.music = pausedHidden.sfx = false;
+      if (!enabled) return;
+      if (!el.paused) fadeTo('music', el, VOLUME);
+      if (sfx && sfx.paused && moodSrc) tryPlay(sfx); // 手势阻塞会自己挂一次监听，这里不必再判
     }
+  }
+
+  // ---- 系统媒体会话：让锁屏 / 系统媒体面板认识这个站 ----
+  function trackLabel(src) {
+    if (!src) return '';
+    var s = String(src).split('?')[0].split('/').pop() || '';
+    try { s = decodeURIComponent(s); } catch (e) {}
+    return s.replace(/\.[a-z0-9]{2,4}$/i, '');
+  }
+
+  function setMediaMeta() {
+    if (!('mediaSession' in navigator) || !window.MediaMetadata) return;
+    var title = trackLabel(el && el.src) || '氛围音乐';
+    var artist = (theme && theme.persona && theme.persona.name) || document.title || '';
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title,
+        artist: artist,
+        album: (theme && theme.id) || ''
+      });
+    } catch (e) {}
+  }
+
+  function setPlaybackState(state) {
+    if (!('mediaSession' in navigator)) return;
+    try { navigator.mediaSession.playbackState = state; } catch (e) {}
+  }
+
+  function ensureMediaSession() {
+    if (!('mediaSession' in navigator) || mediaSessionReady) return;
+    mediaSessionReady = true;
+    setMediaMeta();
+    // 系统面板上的播放/暂停只切总开关，保持与站内「音乐」按钮同一份状态
+    try {
+      navigator.mediaSession.setActionHandler('play', function () { window.AmbientAudio.setEnabled(true); });
+      navigator.mediaSession.setActionHandler('pause', function () { window.AmbientAudio.setEnabled(false); });
+      navigator.mediaSession.setActionHandler('stop', function () { window.AmbientAudio.setEnabled(false); });
+    } catch (e) {}
   }
 
   // ---- 音乐层 ----
@@ -81,9 +125,13 @@
     if (el) return;
     el = new Audio();
     el.loop = true;
+    el.playsInline = true;
     el.volume = 0;
     el.addEventListener('error', onError);
+    el.addEventListener('playing', function () { setPlaybackState('playing'); });
+    el.addEventListener('pause', function () { setPlaybackState('paused'); });
     document.addEventListener('visibilitychange', onVisibility);
+    ensureMediaSession();
   }
 
   function onError() {
@@ -104,6 +152,7 @@
 
   function load(src) {
     el.src = src;
+    setMediaMeta(); // 换曲后同步系统媒体信息
     tryPlay(el);
   }
 
@@ -111,7 +160,7 @@
     candidates = buildCandidates(theme);
     candidateIdx = 0;
     load(candidates[0]);
-    fadeTo('music', el, VOLUME);
+    fadeTo('music', el, document.hidden ? DUCK_VOLUME : VOLUME);
   }
 
   // ---- 天气音效层 ----
@@ -173,8 +222,8 @@
     setEnabled: function (on) {
       enabled = !!on;
       if (!enabled) {
-        if (el) fadeTo('music', el, 0, function () { el.pause(); });
-        if (sfx) fadeTo('sfx', sfx, 0, function () { sfx.pause(); });
+        if (el) fadeTo('music', el, 0, function () { el.pause(); }, DUCK_FADE_MS);
+        if (sfx) fadeTo('sfx', sfx, 0, function () { sfx.pause(); }, DUCK_FADE_MS);
         return;
       }
       ensureEl();

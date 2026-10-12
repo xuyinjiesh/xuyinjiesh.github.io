@@ -675,12 +675,17 @@
       botSay(['现在在牌局里 —— 点下面的按钮行动，或者输入 1/2/3 选牌、「结束回合」；不想玩了就说「不玩了」。']);
       return;
     }
-    // 任何输入都先悄悄试一次口令；命中则切换隐藏主题并重载，未命中走正常路由
+    // 任何输入都先悄悄试一次口令；命中则原地切到隐藏主题，未命中走正常路由
     tryUnlock(text).then(function (ok) {
       if (!ok) { botSay(route(text)); return; }
+      // 原地换装，不再 location.reload()——重载会打断正在播的氛围音乐
+      var unlockT = ThemeEngine.get(SITE.secret.unlocksTheme || 'birthday');
       botSay(['🎂 暗号正确！为你打开隐藏主题…']).then(function () {
         return delay(1000);
-      }).then(function () { location.reload(); });
+      }).then(function () {
+        switchTheme(unlockT);
+        if (!unlockT) botSay(['这个主题暂时没配好，不过暗号我记住了。']);
+      });
     });
   }
 
@@ -741,6 +746,40 @@
     botSay(lines);
   }
 
+  // ---- 主题切换：原地换装，不重载页面（重载会把音乐一起带走） ----
+  // 同时负责刷新问候语、快捷回复、粒子与背景音乐，等价于原来 location.reload() 后的效果
+  function switchTheme(t) {
+    if (!t) return false;
+    theme = t;
+    ThemeEngine.apply(t);
+    applyPersona();
+    renderQuickReplies();
+    syncParticles();
+    if (window.AmbientAudio) window.AmbientAudio.setTheme(theme);
+    return true;
+  }
+
+  // 跨过午夜（或跨过按小时命中的规则）时重新解析主题，只在真的变了的时候换装。
+  // 用定期检查而不是一次性定时器，避免标签页休眠/系统挂起把定时器拖偏。
+  function scheduleThemeRefresh() {
+    function check() {
+      // 拿着暗号解锁过隐藏主题的访客不做自动换装，保持他解锁到的样子
+      var storedKey = null;
+      try { storedKey = localStorage.getItem(KEY_STORE); } catch (e) {}
+      if (storedKey && secretConfigured()) return;
+      var next = ThemeEngine.resolve(new Date());
+      if (!next) return;
+      // 只在主题真的变了才换装——每小时都重启一次音乐就本末倒置了
+      if (next.id !== theme.id) switchTheme(next);
+    }
+    var now = new Date();
+    var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 3);
+    setTimeout(function () {
+      check();
+      setInterval(check, 30 * 1000);
+    }, midnight - now);
+  }
+
   function start() {
     applyPersona();
     renderQuickReplies();
@@ -758,10 +797,7 @@
     if (savedRun && !spireFinished(savedRun)) {
       botSay(['（对了，上次那局爬塔还停在第 ' + savedRun.floor + ' 层，说「爬塔」就能接着打。）']);
     }
-    // 跨过午夜后刷新主题
-    var now = new Date();
-    var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 3);
-    setTimeout(function () { location.reload(); }, midnight - now);
+    scheduleThemeRefresh();
 
     renderMotionBtn();
     syncParticles();
@@ -785,7 +821,7 @@
           history.replaceState(null, '', location.pathname); // 抹掉 URL 里的口令
         }
         var t = ThemeEngine.get(SITE.secret.unlocksTheme || 'birthday');
-        if (t) { theme = t; ThemeEngine.apply(t); }
+        if (t) switchTheme(t);
       }
       start();
     });
