@@ -6,3 +6,5 @@ js/identity.local.js
 # CI 部署暂存目录
 _site/
 __pycache__/
+
+.dsh-scratch
