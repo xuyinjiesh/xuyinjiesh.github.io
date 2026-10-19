@@ -15,6 +15,17 @@
   var CREDITS_URL = 'assets/audio/CREDITS.md';
 
   window.SITE = {
+    // 「看看作品」自动读取身份层指定账号的公开仓库，无需配置 GitHub token。
+    // 按最近推送排序；接口不可用时先用缓存，再回退到 profile.projects。
+    githubProjects: {
+      enabled: !!ID.github,
+      username: ID.github || '',
+      limit: 6,
+      cacheMinutes: 30,
+      includeForks: false,
+      exclude: [ID.github].filter(Boolean) // 个人资料 README 仓库不作为作品展示
+    },
+
     // 口令解锁：源码里只放口令的 SHA-256 哈希，口令本身永远不要提交进仓库。
     // 生成口令（自己保存好，分享给朋友就是钥匙）：
     //   openssl rand -hex 24
@@ -55,7 +66,7 @@
         '最近在折腾这个聊天式主页，顺便学点新东西。',
         '如果你想看实时的动态，我的 GitHub 比这里勤快。'
       ],
-      // 「看看作品」
+      // 「看看作品」的离线回退；locked 项目仍只在口令解锁后显示。
       projects: [
         { title: '聊天式个人主页', desc: '就是你现在看到的这个。', link: GITHUB_URL + '/' + ID.github + '.github.io', tag: 'Web' },
         { title: 'cargo-hole', desc: 'cargo-hole 是一种基于 SDD 思想的 Rust 开发方式，由人写架构和原子化的规约，LLM 负责实现，可支持缓存。', link: GITHUB_URL + '/cargo-hole', tag: 'Rust' },

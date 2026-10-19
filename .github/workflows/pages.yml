@@ -55,6 +55,7 @@ jobs:
           node .github/scripts/check_themes.cjs
           node .github/scripts/check_music.cjs
           node .github/scripts/check_audio.cjs
+          node .github/scripts/check_projects.cjs
           python3 .github/scripts/fetch_music.py --check
 
       # 只复制公开静态资源，避免把 .git / .github / firework-simulator 带进产物

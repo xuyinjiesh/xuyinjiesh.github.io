@@ -261,6 +261,7 @@
     $msgs.appendChild(li);
     scrollBottom();
     if (!opts.restore) saveMsg(side, html);
+    hydrateProjects(li);
     return li;
   }
 
@@ -595,16 +596,56 @@
   }
 
   // ---- 意图 ----
-  function projectCards() {
-    var html = '<div class="cards">';
-    SITE.profile.projects.forEach(function (p) {
+  function renderProjectCards(projects) {
+    var html = '<div class="cards project-cards">';
+    projects.forEach(function (p) {
       if (p.locked && !unlocked) return;
-      html += '<a class="card" href="' + esc(p.link) + '" target="_blank" rel="noopener">' +
-        '<span class="card-tag">' + esc(p.tag) + '</span>' +
+      html += '<a class="card project-card" href="' + esc(p.link) + '" target="_blank" rel="noopener">' +
+        '<span class="project-card-top"><span class="card-tag">' + esc(p.tag || '代码仓库') + '</span><span aria-hidden="true">↗</span></span>' +
         '<strong>' + esc(p.title) + '</strong>' +
-        '<span>' + esc(p.desc) + '</span></a>';
+        '<span class="project-description">' + esc(p.desc || '还没有写项目介绍，去仓库看看吧。') + '</span>';
+      if (typeof p.stars === 'number') {
+        html += '<span class="project-meta"><span aria-label="' + p.stars + ' 个 Star">☆ ' + p.stars + '</span>' +
+          '<span aria-label="' + p.forks + ' 个 Fork"><svg class="project-fork-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 5v2a4 4 0 0 0 4 4m4-6v2a4 4 0 0 1-4 4v2"/><circle cx="4" cy="3" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="8" cy="14" r="1.5"/></svg>' + p.forks + '</span>';
+        if (p.updatedAt) html += '<time datetime="' + esc(p.updatedAt) + '">更新于 ' + esc(p.updatedAt.slice(0, 10).replace(/-/g, '.')) + '</time>';
+        html += '</span>';
+      }
+      html += '</a>';
     });
     return html + '</div>';
+  }
+
+  function projectCards() {
+    if (!window.GitHubProjects || !window.GitHubProjects.available()) return renderProjectCards(SITE.profile.projects);
+    return '<div class="project-collection" data-github-projects aria-busy="true">' +
+      '<p class="project-loading" role="status">正在看看 GitHub 上的项目…</p></div>';
+  }
+
+  function hydrateProjects(li) {
+    var panel = li.querySelector('[data-github-projects]');
+    if (!panel) return;
+    li.classList.add('project-response');
+    function render(result) {
+      if (!panel.isConnected) return;
+      var nearBottom = $msgs.scrollHeight - $msgs.scrollTop - $msgs.clientHeight < 64;
+      var automatic = ['live', 'cache', 'stale'].indexOf(result.source) !== -1;
+      var projects = automatic ? result.projects.concat(SITE.profile.projects.filter(function (p) { return p.locked && unlocked; })) : SITE.profile.projects;
+      var user = (SITE.githubProjects && SITE.githubProjects.username) || (window.IDENTITY && window.IDENTITY.github);
+      panel.innerHTML = '<div class="project-heading"><strong>公开作品</strong><span>' +
+        (automatic ? 'GitHub · 最近推送' : '项目选集') + '</span></div>' +
+        (projects.length ? renderProjectCards(projects) : '<p class="project-empty">还没有可展示的公开项目，之后再来看看吧。</p>') +
+        (result.source === 'stale' ? '<p class="project-note">这是上次看到的项目，最新动态可以去 GitHub 看看。</p>' : '') +
+        (!automatic ? '<p class="project-note">先看看这几项作品，更多项目在 GitHub。</p>' : '') +
+        (user ? '<a class="project-more" href="https://github.com/' + encodeURIComponent(user) + '?tab=repositories" target="_blank" rel="noopener">去 GitHub 看全部 <span aria-hidden="true">↗</span></a>' : '');
+      panel.setAttribute('aria-busy', 'false');
+      // 列表展开时先展示第一张卡片；访客已向上翻阅则保留其位置。
+      if (nearBottom) {
+        if (li.offsetHeight > $msgs.clientHeight) $msgs.scrollTop += li.getBoundingClientRect().top - $msgs.getBoundingClientRect().top - 16;
+        else scrollBottom();
+      }
+    }
+    if (!window.GitHubProjects) { render({ source: 'fallback', projects: [] }); return; }
+    window.GitHubProjects.load().then(render, function () { render({ source: 'fallback', projects: [] }); });
   }
 
   function contactCard() {
@@ -621,7 +662,7 @@
       case 'who':
         return SITE.profile.bio.slice();
       case 'projects':
-        return ['做过的部分项目：', { html: projectCards() }];
+        return ['做过的部分项目，点卡片就能去看看：', { html: projectCards() }];
       case 'now':
         return SITE.profile.now.slice();
       case 'contact':
