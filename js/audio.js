@@ -16,6 +16,7 @@
 
   var VOLUME = 0.3;
   var SFX_VOLUME = 0.15;
+  var BURST_VOLUME = 0.25;
   var FADE_MS = 1500;
   var FADE_OUT_MS = 650;
   var FADE_STEP_MS = 25;
@@ -30,8 +31,8 @@
   var candidates = [];
   var candidateIdx = 0;
   // 曲目切换和页面显隐分别控制音量，切标签页不会打断换曲的回调。
-  var fades = { music: null, sfx: null, presence: null };
-  var levels = { music: 0, sfx: 0, presence: document.hidden ? 0 : 1 };
+  var fades = { music: null, sfx: null, bursts: null, presence: null };
+  var levels = { music: 0, sfx: 0, bursts: 1, presence: document.hidden ? 0 : 1 };
   var pausedForVisibility = { music: false, sfx: false };
   var waitingForMusic = false;
   var waitingForSfx = false;
@@ -42,6 +43,9 @@
   var awayState = document.hidden;
   var mediaSessionReady = false;
   var waitingGesture = false;
+  var bursts = [];
+  var lastBurstAt = -Infinity;
+  var lastBurstIndex = -1;
 
   function isAway() { return pageHiding || document.hidden; }
 
@@ -54,6 +58,9 @@
     levels[key] = value;
     if (el) el.volume = Math.max(0, Math.min(1, levels.music * levels.presence));
     if (sfx) sfx.volume = Math.max(0, Math.min(1, levels.sfx * levels.presence));
+    bursts.forEach(function (voice) {
+      voice.el.volume = voice.level * levels.bursts * levels.presence;
+    });
   }
 
   function fadeTo(key, target, done, ms) {
@@ -99,6 +106,7 @@
   function pauseForVisibility() {
     if (el && !el.paused) { pausedForVisibility.music = enabled; el.pause(); }
     if (sfx && !sfx.paused) { pausedForVisibility.sfx = enabled && !!mood; sfx.pause(); }
+    stopBursts(); // 一次性爆声离开后丢弃，返回时不从半截继续播放。
   }
 
   function onVisibility() {
@@ -330,18 +338,50 @@
   }
 
   // ---- 烟花单次音效：由 js/particles.js 的 firework-burst 事件驱动 ----
-  // 程序合成素材，无版权问题；每次爆发新建 Audio 实例以允许重叠
+  // 沿用原版爆声，仅细调火星尾音；保持原音量与原速，最多三声重叠。
+  // 相邻爆发选用不同素材，避免同一段音效连续重复。
   var BURST_SFX = [
-    'assets/audio/fireworks-1.wav',
-    'assets/audio/fireworks-2.wav',
-    'assets/audio/fireworks-3.wav'
+    'assets/audio/fireworks-1.wav?v=3',
+    'assets/audio/fireworks-2.wav?v=3',
+    'assets/audio/fireworks-3.wav?v=3'
   ];
+
+  function stopBursts() {
+    bursts.slice().forEach(function (voice) {
+      voice.el.pause();
+      voice.cleanup();
+    });
+    lastBurstAt = -Infinity;
+  }
+
   document.addEventListener('firework-burst', function () {
-    if (!enabled || document.hidden) return;
-    var a = new Audio(BURST_SFX[Math.floor(Math.random() * BURST_SFX.length)]);
-    a.volume = 0.25;
+    if (!enabled || isAway() || bursts.length >= 3) return;
+    var now = performance.now();
+    if (now - lastBurstAt < 140) return;
+    var index = lastBurstIndex < 0 ? Math.floor(Math.random() * BURST_SFX.length)
+      : (lastBurstIndex + 1 + Math.floor(Math.random() * (BURST_SFX.length - 1))) % BURST_SFX.length;
+    lastBurstAt = now;
+    lastBurstIndex = index;
+    var a = new Audio();
+    var voice = {
+      el: a,
+      level: BURST_VOLUME,
+      cleanup: function () {
+        a.removeEventListener('ended', voice.cleanup);
+        a.removeEventListener('error', voice.cleanup);
+        var i = bursts.indexOf(voice);
+        if (i !== -1) bursts.splice(i, 1);
+      }
+    };
+    a.src = BURST_SFX[index];
+    a.volume = voice.level * levels.bursts * levels.presence;
+    a.playbackRate = 1;
+    a.playsInline = true;
+    a.addEventListener('ended', voice.cleanup);
+    a.addEventListener('error', voice.cleanup);
+    bursts.push(voice);
     var p = a.play();
-    if (p && p.catch) p.catch(function () { /* 手势前静默 */ });
+    if (p && p.catch) p.catch(voice.cleanup); // 手势前静默，同时归还播放名额。
   });
 
   window.AmbientAudio = {
@@ -354,8 +394,11 @@
         publishMusic('off');
         if (el) fadeTo('music', 0, function () { el.pause(); }, FADE_OUT_MS);
         if (sfx) fadeTo('sfx', 0, function () { sfx.pause(); }, FADE_OUT_MS);
+        fadeTo('bursts', 0, stopBursts, FADE_OUT_MS);
         return;
       }
+      stopFade('bursts');
+      setLevel('bursts', 1);
       stopFade('presence');
       setLevel('presence', isAway() ? 0 : 1);
       ensureEl();
@@ -364,6 +407,7 @@
     },
     setTheme: function (t) {
       var sameTrack = theme && t && buildCandidates(theme)[0] === buildCandidates(t)[0];
+      if (theme && t && theme.id !== t.id) stopBursts();
       theme = t;
       if (!enabled || !el) return;
       // 相邻节气共用曲目时保留播放进度，也保留正在进行的切换。

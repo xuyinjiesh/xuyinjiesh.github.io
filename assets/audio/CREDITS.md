@@ -51,7 +51,8 @@ Kevin MacLeod 曲目的署名格式为："曲名" Kevin MacLeod (incompetech.com
 
 ### fireworks-1.wav / fireworks-2.wav / fireworks-3.wav
 
-本站既有的程序合成烟花音效。
+沿用本站既有的程序合成音效，保留原版爆声、峰值、时长与 22050 Hz 单声道格式，仅细调 180 ms 之后的火星碎裂尾音；不含外部采样。
+原始底稿保存在 `.github/audio-sources/`；处理脚本为 `.github/scripts/generate_fireworks.py`（维护时需 numpy、scipy；页面播放无需依赖）。
 
 ## 许可说明与维护
 

@@ -178,4 +178,62 @@ for (let i = 0; i < 20; i++) catalog.audios[0].emit('error');
 assert.equal(catalog.api.getState().state, 'unavailable');
 assert.equal(catalog.api.isEnabled(), true);
 
-console.log('Passed audio lifecycle, catalog fallback attribution, shared-track continuity, blue-hour changes, and exhausted-source handling without rAF.');
+// Fireworks must stay bounded, vary recordings, and obey the same mute/presence
+// controls as music. One-shots are discarded on return rather than resumed.
+const fireworks = environment();
+fireworks.document.emit('firework-burst');
+assert.equal(fireworks.audios.length, 0, 'Muted fireworks must not create players');
+fireworks.api.setEnabled(true); fireworks.advance(1500);
+fireworks.document.emit('firework-burst');
+const firstBurst = fireworks.audios[1];
+assert.ok(firstBurst.src.startsWith('assets/audio/fireworks-'));
+near(firstBurst.volume, .25);
+assert.equal(firstBurst.playbackRate, 1, 'Keep the original explosion pitch and timing');
+fireworks.document.emit('firework-burst');
+assert.equal(fireworks.audios.length, 2, 'Simultaneous bursts are throttled');
+for (let i = 0; i < 5; i++) { fireworks.advance(180); fireworks.document.emit('firework-burst'); }
+assert.equal(fireworks.audios.length, 4, 'Only three overlapping voices are allocated');
+assert.notEqual(fireworks.audios[1].src, fireworks.audios[2].src, 'Adjacent bursts use different recordings');
+assert.notEqual(fireworks.audios[2].src, fireworks.audios[3].src);
+firstBurst.emit('ended');
+fireworks.advance(180); fireworks.document.emit('firework-burst');
+assert.equal(fireworks.audios.length, 5, 'Ended voices release their slot');
+const fadingBurst = fireworks.audios[4];
+const fullVolume = fadingBurst.volume;
+fireworks.hidden(true); fireworks.advance(325);
+assert.ok(fadingBurst.volume > 0 && fadingBurst.volume < fullVolume);
+fireworks.advance(325);
+near(fadingBurst.volume, 0); assert.equal(fadingBurst.paused, true);
+const awayCount = fireworks.audios.length;
+fireworks.document.emit('firework-burst');
+assert.equal(fireworks.audios.length, awayCount, 'Background tabs cannot start bursts');
+fireworks.hidden(false); fireworks.advance(1500);
+assert.equal(fadingBurst.plays, 1, 'Returning must not resume a spent explosion');
+fireworks.document.emit('firework-burst');
+const mutedBurst = fireworks.audios.at(-1);
+fireworks.api.setEnabled(false); fireworks.advance(650);
+near(mutedBurst.volume, 0); assert.equal(mutedBurst.paused, true);
+fireworks.api.setEnabled(true); fireworks.advance(1500);
+fireworks.document.emit('firework-burst');
+const oldThemeBurst = fireworks.audios.at(-1);
+fireworks.api.setTheme({ id: 'spring', music: 'https://example.com/spring.mp3' });
+assert.equal(oldThemeBurst.paused, true, 'Switching scenery clears old firework tails');
+fireworks.document.emit('firework-burst');
+const navigatingBurst = fireworks.audios.at(-1);
+fireworks.window.emit('pagehide');
+assert.equal(navigatingBurst.paused, true);
+const navigatingCount = fireworks.audios.length;
+fireworks.document.emit('firework-burst');
+assert.equal(fireworks.audios.length, navigatingCount, 'Navigation suppresses late particle events');
+
+const rejectedBursts = environment({ blocked: true });
+rejectedBursts.api.setEnabled(true);
+for (let i = 0; i < 5; i++) { rejectedBursts.advance(180); rejectedBursts.document.emit('firework-burst'); }
+assert.equal(rejectedBursts.audios.length, 6, 'Rejected play promises must release burst slots');
+rejectedBursts.unblock(); rejectedBursts.advance(180); rejectedBursts.document.emit('firework-burst');
+const failedBurst = rejectedBursts.audios.at(-1);
+failedBurst.emit('error');
+for (let i = 0; i < 3; i++) { rejectedBursts.advance(180); rejectedBursts.document.emit('firework-burst'); }
+assert.equal(rejectedBursts.audios.length, 10, 'Failed files also release burst slots');
+
+console.log('Passed music/audio lifecycle, source fallback, firework variation/limits, rejection cleanup, and one-shot mute/visibility/navigation without rAF.');

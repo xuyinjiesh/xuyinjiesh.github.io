@@ -33,7 +33,7 @@
   function syncParticles() {
     if (!window.Particles) return;
     if (reducedMotion) window.Particles.stop();
-    else window.Particles.start(theme.particles, theme.vars['--accent']);
+    else window.Particles.start(theme.particles, theme.vars['--accent'], theme);
   }
 
   function renderMotionBtn() {
