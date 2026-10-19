@@ -15,20 +15,13 @@
   var $input = document.getElementById('composer-input');
   var $motion = document.getElementById('motion-toggle');
 
-  // ---- 动效开关：站内显式设置优先于系统 prefers-reduced-motion ----
+  // ---- 动效开关：首次访问默认开，之后沿用访客的选择 ----
   var MOTION_KEY = 'homepage.motion.v1';
-  var motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function storedMotion() {
     try { return localStorage.getItem(MOTION_KEY); } catch (e) { return null; }
   }
-  function effectiveReduced() {
-    var v = storedMotion();
-    if (v === 'off') return true;
-    if (v === 'on') return false;
-    return motionQuery.matches;
-  }
-  var reducedMotion = effectiveReduced();
+  var reducedMotion = storedMotion() === 'off';
 
   function syncParticles() {
     if (!window.Particles) return;
@@ -49,12 +42,12 @@
     syncParticles();
   });
 
-  // ---- 氛围音乐开关：默认关，记住选择 ----
-  // 浏览器禁止手势前播放：回访时若记住了“开”，等首次点击/按键再开播
+  // ---- 氛围音乐开关：首次访问默认开，之后沿用访客的选择 ----
+  // 自动播放被拦截时，由 js/audio.js 等待首次点击/按键后重试。
   var MUSIC_KEY = 'homepage.music.v1';
   var $music = document.getElementById('music-toggle');
   var musicOn = (function () {
-    try { return localStorage.getItem(MUSIC_KEY) === 'on'; } catch (e) { return false; }
+    try { return localStorage.getItem(MUSIC_KEY) !== 'off'; } catch (e) { return true; }
   })();
 
   function renderMusicBtn() {
@@ -76,17 +69,6 @@
     renderMusicBtn();
     if (window.AmbientAudio) window.AmbientAudio.setEnabled(musicOn); // 点击本身是合法手势
   });
-
-  function armMusicAutoplay() {
-    if (!musicOn || !window.AmbientAudio) return;
-    var resume = function () {
-      document.removeEventListener('pointerdown', resume);
-      document.removeEventListener('keydown', resume);
-      window.AmbientAudio.setEnabled(true);
-    };
-    document.addEventListener('pointerdown', resume);
-    document.addEventListener('keydown', resume);
-  }
 
   // ---- 跟随天气：默认关；打开后请求定位，拉 Open-Meteo 当前天气，叠加音效层 ----
   // 定位权限被拒 / 拉取失败都安静跳过，不影响其他功能
@@ -863,8 +845,10 @@
     renderMotionBtn();
     syncParticles();
     renderMusicBtn();
-    if (window.AmbientAudio) window.AmbientAudio.setTheme(theme);
-    armMusicAutoplay();
+    if (window.AmbientAudio) {
+      window.AmbientAudio.setTheme(theme);
+      window.AmbientAudio.setEnabled(musicOn);
+    }
     renderWeatherBtn();
     if (weatherOn) startWeather();
   }

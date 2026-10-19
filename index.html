@@ -20,12 +20,12 @@
     }, 4000);
     var t = ThemeEngine.resolve(new Date());
     ThemeEngine.apply(t);
-    // 站内动效开关在首绘前应用，防动画闪烁；未设置则跟随系统
+    // 首次访问默认开启动效；在首绘前应用访客选择，防动画闪烁。
+    var m = null;
     try {
-      var m = localStorage.getItem('homepage.motion.v1');
-      if (m === 'on') document.documentElement.dataset.motion = 'full';
-      else if (m === 'off') document.documentElement.dataset.motion = 'reduce';
+      m = localStorage.getItem('homepage.motion.v1');
     } catch (e) {}
+    document.documentElement.dataset.motion = m === 'off' ? 'reduce' : 'full';
   })();
 </script>
 <link rel="stylesheet" href="css/style.css">
