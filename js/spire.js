@@ -1,72 +1,30 @@
 /*
- * 文字版爬塔：杀戮尖塔式单角色卡牌 Roguelike 的纯逻辑引擎。
- *
- * 设计约定（跟 js/liuyao.js 一致，方便渲染层随便换）：
- *   - 不碰 DOM、不碰 localStorage，只吃 run 对象、吐 { run, log }；
- *   - 全部随机走 run.rng（mulberry32），同一种子可复现，存档里存种子就够了；
- *   - act() 不改传进来的 run，内部深拷贝，方便做回放/悔棋/测试；
- *   - 内容（卡牌 / 敌人）都是文件顶部的数据表，加内容不用动逻辑。
- *
- * 渲染层在 js/chat.js（按钮驱动），面板样式复用 css/style.css 的 pre.chart。
+ * 口袋地牢：三层、房间二选一、骰子战斗。
+ * 纯逻辑引擎，不访问 DOM 或存储。act 不修改输入；所有局内随机使用存档中的 rng。
+ * 借鉴 Iron Helm 的明暗房间选择与 Mini Rogue 的轻量资源管理，规则为本站原创简化版。
  */
 (function () {
   'use strict';
 
-  // ==================== 数据：卡牌 ====================
-  // desc 用于奖励界面；dmg/block 是基础值，升级（up）时 +3
-  var CARDS = {
-    strike:  { name: '劈砍', cost: 1, desc: '造成 6 点伤害', dmg: 6 },
-    defend:  { name: '格挡', cost: 1, desc: '获得 5 点格挡', block: 5 },
-    bash:    { name: '猛击', cost: 2, desc: '造成 8 点伤害，施加 2 层易伤', dmg: 8, vuln: 2 },
-    combo:   { name: '连击', cost: 1, desc: '造成 4 点伤害两次', dmg: 4, times: 2 },
-    bulwark: { name: '铁壁', cost: 1, desc: '获得 8 点格挡', block: 8 },
-    smash:   { name: '蛮力', cost: 2, desc: '造成 12 点伤害', dmg: 12 }
-  };
-
-  // 战后战利品池（阶段 1 只有这三张，之后往这里加就是了）
-  var LOOT_POOL = ['combo', 'bulwark', 'smash'];
-
-  // ==================== 数据：敌人 ====================
-  // moves.kind: 'attack' | 'block' | 'buff'；weak 是给对方叠的虚弱层数，
-  // heal 是自回血，buff 是永久攻击力成长（Boss 的狂暴）
-  var ENEMIES = {
-    slime: {
-      name: '黏液球', hp: [15, 19], moves: [
-        { name: '撞击', kind: 'attack', dmg: 6 },
-        { name: '黏住', kind: 'attack', dmg: 5, weak: 1 }
-      ]
-    },
-    bat: {
-      name: '小蝙蝠', hp: [12, 16], moves: [
-        { name: '撕咬', kind: 'attack', dmg: 6 },
-        { name: '吸血', kind: 'attack', dmg: 4, heal: 4 }
-      ]
-    },
-    king: {
-      name: '黏液之王', hp: [106, 106], boss: true, moves: [
-        { name: '重压', kind: 'attack', dmg: 12 },
-        { name: '黏液喷吐', kind: 'attack', dmg: 7, weak: 2 },
-        { name: '硬化', kind: 'block', block: 10 },
-        { name: '狂暴', kind: 'buff', buff: 3 }
-      ]
-    }
-  };
-
-  // 普通敌人按楼层变强（Boss 不吃这张表，它自己就是数值）
-  var FLOOR_SCALE = [
-    { hp: 1, dmg: 0 },
-    { hp: 1.3, dmg: 2 },
-    { hp: 1.6, dmg: 4 },
-    { hp: 1.9, dmg: 6 }
+  var VERSION = 2;
+  var FLOORS = 3;
+  var ROOMS = 3;
+  var ENEMIES = [
+    { name: '洞穴蝙蝠', icon: 'bat', hp: 6, attack: 2 },
+    { name: '苔石守卫', icon: 'golem', hp: 9, attack: 1 },
+    { name: '游荡骷髅', icon: 'skeleton', hp: 7, attack: 2 }
   ];
+  var ROOM_TYPES = ['monster', 'monster', 'monster', 'camp', 'treasure', 'treasure', 'merchant', 'trap'];
+  var ROOMS_INFO = {
+    camp: { name: '余温营火', icon: 'camp', desc: '休息回复 7 点生命，或收集 2 份口粮。' },
+    treasure: { name: '遗落宝箱', icon: 'treasure', desc: '稳拿 4 金币，或掷骰寻找装备。' },
+    merchant: { name: '提灯商人', icon: 'merchant', desc: '4 金币买补给，6 金币磨利武器；也可离开。' },
+    trap: { name: '机关走廊', icon: 'trap', desc: '掷出 4–6 拆除机关得 3 金币，或花 1 口粮绕路。' }
+  };
+  var RULES = '共 3 层，每层 3 间房，塔顶还有守关者。每次选眼前的房间，或放弃它、进入未知房间。攻击 = 六面骰 + 武器；敌人存活就反击，护甲每次减伤。强攻花 1 口粮，掷两骰取高再 +2；药水回复 8 生命，不触发反击。前两层结束各吃 1 口粮，不够就损失 4 生命。';
 
-  var FLOORS = 5;          // 第 5 层是 Boss
-  var MAX_ENERGY = 3;
-  var DRAW_PER_TURN = 5;
-  var HAND_LIMIT = 10;
-  var NUM = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-
-  // ==================== 随机：mulberry32 ====================
+  function clone(value) { return JSON.parse(JSON.stringify(value)); }
+  function log(run, text) { run.log.push(text); }
   function rnd(run) {
     run.rng = (run.rng + 0x6D2B79F5) >>> 0;
     var t = run.rng;
@@ -74,461 +32,317 @@
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
-  function randInt(run, min, max) { return min + Math.floor(rnd(run) * (max - min + 1)); }
-  function shuffle(run, arr) {
-    for (var i = arr.length - 1; i > 0; i--) {
-      var j = Math.floor(rnd(run) * (i + 1));
-      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
-    }
-    return arr;
+  function randomInt(run, min, max) { return min + Math.floor(rnd(run) * (max - min + 1)); }
+  function dice(run, count, purpose) {
+    var values = [];
+    for (var i = 0; i < count; i++) values.push(randomInt(run, 1, 6));
+    run.lastRoll = { values: values, purpose: purpose };
+    return Math.max.apply(null, values);
   }
-
-  function log(run, line) { (run.log = run.log || []).push(line); }
-  function clone(o) { return JSON.parse(JSON.stringify(o)); }
-
-  // ==================== 卡牌 ====================
-  function entry(id) { return { id: id, up: 0 }; }
-
-  function stats(e) {
-    var c = CARDS[e.id];
-    var up = e.up || 0;
-    return {
-      id: e.id,
-      name: c.name + (up ? '+' : ''),
-      cost: c.cost,
-      desc: c.desc,
-      dmg: c.dmg ? c.dmg + (up ? 3 : 0) : 0,
-      times: c.times || 1,
-      block: c.block ? c.block + (up ? 3 : 0) : 0,
-      vuln: c.vuln || 0
-    };
+  function heal(run, amount) {
+    var actual = Math.min(amount, run.maxHp - run.hp);
+    run.hp += actual;
+    log(run, '回复 ' + actual + ' 点生命。');
   }
-
-  function startDeck() {
-    var d = [], i;
-    for (i = 0; i < 5; i++) d.push(entry('strike'));
-    for (i = 0; i < 4; i++) d.push(entry('defend'));
-    d.push(entry('bash'));
-    return d;
-  }
-
-  // ==================== 伤害结算 ====================
-  // 虚弱：造成伤害 ×0.75；易伤：受到伤害 ×1.5（都向下取整，跟原作手感一致）
-  function calcDmg(base, attacker, target) {
-    var d = base;
-    if (attacker && attacker.weak > 0) d = Math.floor(d * 0.75);
-    if (target && target.vuln > 0) d = Math.floor(d * 1.5);
-    return Math.max(0, d);
-  }
-
-  function damagePlayer(run, amount) {
-    var c = run.combat;
-    var toHp = Math.max(0, amount - c.block);
-    var absorbed = amount - toHp;
-    c.block -= Math.min(c.block, amount);
-    run.hp -= toHp;
-    return { toHp: toHp, absorbed: absorbed };
-  }
-
-  // ==================== 敌人 ====================
-  function spawnEnemy(run, id, floor) {
-    var t = ENEMIES[id];
-    var sc = t.boss ? { hp: 1, dmg: 0 } : FLOOR_SCALE[Math.min(floor, FLOOR_SCALE.length) - 1];
-    var hp = randInt(run, Math.round(t.hp[0] * sc.hp), Math.round(t.hp[1] * sc.hp));
-    return {
-      id: id, name: t.name, hp: hp, maxHp: hp,
-      block: 0, vuln: 0, weak: 0, boss: !!t.boss,
-      dmgBonus: sc.dmg, move: null, lastMove: -1
-    };
-  }
-
-  // 随机挑一个意图，尽量不跟上一回合重复；伤害在这里一次性定死（含楼层加成），
-  // 这样「预告的数字」和「真正打出来的数字」永远是同一个值
-  function rollMove(run, e) {
-    var moves = ENEMIES[e.id].moves;
-    var idx = randInt(run, 0, moves.length - 1);
-    if (moves.length > 1 && idx === e.lastMove) idx = (idx + 1) % moves.length;
-    e.lastMove = idx;
-    var m = moves[idx];
-    e.move = {
-      name: m.name, kind: m.kind,
-      dmg: m.dmg ? m.dmg + (e.dmgBonus || 0) : 0,
-      block: m.block || 0, weak: m.weak || 0, heal: m.heal || 0, buff: m.buff || 0
-    };
-  }
-
-  function intentText(run) {
-    var e = run.combat.enemy, m = e.move;
-    if (!m) return '意图：不明';
-    if (m.kind === 'block') return '意图：' + m.name + '（获得 ' + m.block + ' 格挡）';
-    if (m.kind === 'buff') return '意图：' + m.name + '（攻击力永久 +' + m.buff + '）';
-    var d = calcDmg(m.dmg, e, run.combat);
-    var extra = [];
-    if (m.weak) extra.push('+' + m.weak + ' 虚弱');
-    if (m.heal) extra.push('回复 ' + m.heal);
-    return '意图：' + m.name + '（' + d + ' 点伤害' + (extra.length ? ' ' + extra.join(' ') : '') + '）';
-  }
-
-  // ==================== 回合流程 ====================
-  function beginCombat(run, floor) {
-    var id = floor >= FLOORS ? 'king' : (rnd(run) < 0.5 ? 'slime' : 'bat');
-    var e = spawnEnemy(run, id, floor);
-    run.combat = {
-      enemy: e, energy: 0, maxEnergy: MAX_ENERGY,
-      hand: [], draw: [], discard: [],
-      block: 0, vuln: 0, weak: 0, turn: 0
-    };
-    run.phase = 'combat';
-    run.reward = null;
-    // 战斗用的是牌组副本，升级状态跟着走；原 deck 顺序不受影响
-    run.combat.draw = shuffle(run, run.deck.map(function (x) { return { id: x.id, up: x.up || 0 }; }));
-    rollMove(run, e);
-    log(run, '第 ' + floor + ' 层：' + e.name + ' 挡住了去路！' + (e.boss ? ' 👑 Boss 战' : ''));
-    startPlayerTurn(run);
-  }
-
-  function startPlayerTurn(run) {
-    var c = run.combat;
-    c.turn++;
-    c.block = 0;                 // 格挡只在自己回合开始时清空
-    c.energy = c.maxEnergy;
-    drawCards(run, DRAW_PER_TURN);
-    log(run, '—— 你的第 ' + c.turn + ' 回合：能量 ' + c.energy + '，手牌 ' + c.hand.length + ' 张 ——');
-  }
-
-  function drawCards(run, n) {
-    var c = run.combat, i;
-    for (i = 0; i < n; i++) {
-      if (c.hand.length >= HAND_LIMIT) { log(run, '手牌满了，抽不下更多。'); return; }
-      if (!c.draw.length) {
-        if (!c.discard.length) { log(run, '牌堆和弃牌堆都空了，没牌可抽。'); return; }
-        c.draw = shuffle(run, c.discard);
-        c.discard = [];
-        log(run, '弃牌堆洗回抽牌堆。');
-      }
-      c.hand.push(c.draw.pop());
-    }
-  }
-
-  function hurtEnemy(run, dmg) {
-    var e = run.combat.enemy;
-    var toHp = Math.max(0, dmg - e.block);
-    var absorbed = dmg - toHp;
-    e.block -= Math.min(e.block, dmg);
-    e.hp -= toHp;
-    log(run, '你对 ' + e.name + ' 造成 ' + toHp + ' 点伤害' +
-      (absorbed ? '（格挡吸收 ' + absorbed + '）' : '') + '，它还剩 ' + Math.max(0, e.hp) + ' 点生命。');
-  }
-
-  function playCard(run, idx) {
-    var c = run.combat;
-    var e = c.hand[idx];
-    if (!e) return;
-    var s = stats(e);
-    if (c.energy < s.cost) { log(run, '能量不够，《' + s.name + '》打不出去（需要 ' + s.cost + ' 点）。'); return; }
-
-    c.energy -= s.cost;
-    c.hand.splice(idx, 1);
-    c.discard.push(e);
-    log(run, '你打出《' + s.name + '》。');
-
-    if (s.block) {
-      c.block += s.block;
-      log(run, '获得 ' + s.block + ' 点格挡，当前格挡 ' + c.block + '。');
-    }
-    for (var i = 0; i < s.times; i++) {
-      if (c.enemy.hp <= 0) break;
-      hurtEnemy(run, calcDmg(s.dmg, c, c.enemy));
-    }
-    if (s.vuln && c.enemy.hp > 0) {
-      c.enemy.vuln += s.vuln;
-      log(run, c.enemy.name + ' 获得 ' + s.vuln + ' 层易伤。');
-    }
-    if (c.enemy.hp <= 0) winCombat(run);
-  }
-
-  function endPlayerTurn(run) {
-    var c = run.combat;
-    if (c.vuln > 0) c.vuln--;
-    if (c.weak > 0) c.weak--;
-    c.discard = c.discard.concat(c.hand);
-    c.hand = [];
-    log(run, '—— ' + c.enemy.name + ' 的回合 ——');
-    enemyAct(run);
-  }
-
-  function enemyAct(run) {
-    var c = run.combat, e = c.enemy, m = e.move;
-    e.block = 0;
-    if (m.kind === 'block') {
-      e.block += m.block;
-      log(run, e.name + ' 使出「' + m.name + '」，获得 ' + m.block + ' 点格挡。');
-    } else if (m.kind === 'buff') {
-      e.dmgBonus += m.buff;
-      log(run, e.name + ' 使出「' + m.name + '」，攻击力永久 +' + m.buff + '（现在每次攻击 +' + e.dmgBonus + '）。');
-    } else {
-      var d = calcDmg(m.dmg, e, c);
-      var res = damagePlayer(run, d);
-      log(run, e.name + ' 使出「' + m.name + '」，对你造成 ' + res.toHp + ' 点伤害' +
-        (res.absorbed ? '（格挡吸收 ' + res.absorbed + '）' : '') + '，你剩余 ' + Math.max(0, run.hp) + ' 点生命。');
-      if (m.weak) { c.weak += m.weak; log(run, '你获得 ' + m.weak + ' 层虚弱。'); }
-      if (m.heal) {
-        e.hp = Math.min(e.maxHp, e.hp + m.heal);
-        log(run, e.name + ' 回复了 ' + m.heal + ' 点生命。');
-      }
-    }
-    if (run.hp <= 0) {
-      run.hp = 0;
+  function hurt(run, amount) {
+    run.hp = Math.max(0, run.hp - amount);
+    if (!run.hp) {
       run.phase = 'over';
-      run.combat = null;
-      log(run, '💀 你倒在了第 ' + run.floor + ' 层。');
-      return;
+      log(run, '你倒在第 ' + run.floor + ' 层。营火还在，下一次再来。');
     }
-    if (e.vuln > 0) e.vuln--;
-    if (e.weak > 0) e.weak--;
-    rollMove(run, e);
-    startPlayerTurn(run);
   }
-
-  function winCombat(run) {
-    var e = run.combat.enemy;
-    e.hp = 0;
-    log(run, e.name + ' 被击倒了！');
+  function makeRoom(run) {
+    var type = ROOM_TYPES[randomInt(run, 0, ROOM_TYPES.length - 1)];
+    if (type !== 'monster') return { type: type };
+    var base = ENEMIES[randomInt(run, 0, ENEMIES.length - 1)];
+    var hp = base.hp + (run.floor - 1) * 3;
+    return { type: type, enemy: {
+      name: base.name, icon: base.icon, hp: hp, maxHp: hp,
+      attack: base.attack + run.floor - 1, boss: false
+    } };
+  }
+  function roomView(room) {
+    if (room.type === 'monster') {
+      return { name: room.enemy.name, icon: room.enemy.icon, type: 'monster',
+        desc: '生命 ' + room.enemy.maxHp + ' · 攻击 ' + room.enemy.attack + '。击败获得 3 金币。' };
+    }
+    var info = ROOMS_INFO[room.type];
+    return { name: info.name, icon: info.icon, desc: info.desc, type: room.type };
+  }
+  function dealRooms(run) {
+    run.phase = 'explore';
+    run.encounter = null;
     run.combat = null;
-    if (run.floor >= run.maxFloor) {
-      run.phase = 'won';
-      log(run, '🏆 黏液之王倒下了，你爬到了塔顶 —— 通关！');
+    run.choices = [makeRoom(run), makeRoom(run)];
+  }
+  function finishRoom(run) {
+    run.cleared++;
+    run.encounter = null;
+    run.combat = null;
+    if (run.room < ROOMS) {
+      run.room++;
+      dealRooms(run);
+    } else if (run.floor < FLOORS) {
+      run.phase = 'stairs';
+      log(run, '找到了向上的阶梯。选一项成长，再进入下一层。');
+    } else {
+      run.phase = 'boss';
+      log(run, '塔顶的门已经打开。最后一战就在眼前。');
+    }
+  }
+  function enterRoom(run, index) {
+    run.encounter = run.choices[index];
+    run.choices = null;
+    var info = roomView(run.encounter);
+    log(run, (index ? '推开暗门，遇见' : '走进眼前的房间，遇见') + '「' + info.name + '」。');
+    if (run.encounter.type === 'monster') {
+      run.phase = 'combat';
+      run.combat = { enemy: clone(run.encounter.enemy), turn: 1 };
+    } else run.phase = 'room';
+  }
+  function startBoss(run) {
+    run.phase = 'combat';
+    run.combat = { turn: 1, enemy: {
+      name: '塔顶守关者', icon: 'boss', hp: 26, maxHp: 26, attack: 6, boss: true
+    } };
+    log(run, '塔顶守关者举起巨斧。击败它，就能带着战利品回家。');
+  }
+  function fight(run, strong) {
+    var enemy = run.combat.enemy;
+    if (strong) run.food--;
+    var roll = dice(run, strong ? 2 : 1, strong ? '强攻 · 两骰取高' : '攻击');
+    var damage = roll + run.weapon + (strong ? 2 : 0);
+    enemy.hp = Math.max(0, enemy.hp - damage);
+    log(run, '掷出 ' + run.lastRoll.values.join('、') + (strong ? '，取 ' + roll : '') +
+      ' + 武器 ' + run.weapon + (strong ? ' + 强攻 2' : '') + '，造成 ' + damage + ' 点伤害。');
+    if (!enemy.hp) {
+      run.kills++;
+      if (enemy.boss) {
+        run.gold += 10;
+        run.phase = 'won';
+        log(run, '守关者倒下了！获得 10 金币，你带着 ' + run.gold + ' 金币走出高塔。');
+      } else {
+        run.gold += 3;
+        log(run, '击败' + enemy.name + '，获得 3 金币。');
+        finishRoom(run);
+      }
       return;
     }
-    run.phase = 'reward';
-    run.reward = shuffle(run, LOOT_POOL.slice()).slice(0, 2);
-    log(run, '战斗结束。挑一样战利品，然后继续向上。');
+    var incoming = Math.max(0, enemy.attack - run.armor);
+    log(run, enemy.name + '反击 ' + enemy.attack + '，护甲抵挡 ' + Math.min(enemy.attack, run.armor) + '，损失 ' + incoming + ' 点生命。');
+    hurt(run, incoming);
+    if (run.phase === 'combat') run.combat.turn++;
   }
-
-  function advance(run) {
-    run.reward = null;
-    run.floor++;
-    log(run, '你沿楼梯继续向上……');
-    beginCombat(run, run.floor);
-  }
-
-  // ==================== 对外接口 ====================
-  function newRun(seed) {
-    var s;
-    if (seed === undefined || seed === null || seed === '') {
-      s = Math.floor(Math.random() * 1000000000);
-    } else {
-      s = Math.abs(parseInt(String(seed).replace(/\D/g, ''), 10));
-      if (!s) s = 1;
+  function resolveRoom(run, id) {
+    if (id === 'rest') heal(run, 7);
+    else if (id === 'forage') {
+      run.food += 2;
+      log(run, '收好 2 份口粮。');
+    } else if (id === 'gold') {
+      run.gold += 4;
+      log(run, '拿走 4 金币，平安离开。');
+    } else if (id === 'search') {
+      var found = dice(run, 1, '翻找宝箱 · 4–6 成功');
+      if (found >= 4) {
+        if (run.weapon >= 4 && run.armor >= 2) {
+          run.gold += 6;
+          log(run, '掷出 ' + found + '，找到 6 金币！装备已经足够好了。');
+        } else if (run.weapon < 4) {
+          run.weapon++;
+          log(run, '掷出 ' + found + '，找到趁手的武器，武器 +1！');
+        } else {
+          run.armor++;
+          log(run, '掷出 ' + found + '，找到护甲，护甲 +1！');
+        }
+      } else {
+        log(run, '掷出 ' + found + '，被暗刺扎伤，损失 3 点生命。');
+        hurt(run, 3);
+      }
+    } else if (id === 'supply') {
+      run.gold -= 4;
+      run.food += 2;
+      log(run, '花 4 金币买了热汤和 2 份口粮。');
+      heal(run, 5);
+    } else if (id === 'smith') {
+      run.gold -= 6;
+      run.weapon++;
+      log(run, '花 6 金币磨利武器，武器 +1。');
+    } else if (id === 'leave') log(run, '和商人道别，继续前行。');
+    else if (id === 'disarm') {
+      var check = dice(run, 1, '拆除机关 · 4–6 成功');
+      if (check >= 4) {
+        run.gold += 3;
+        log(run, '掷出 ' + check + '，拆除机关，获得 3 金币。');
+      } else {
+        log(run, '掷出 ' + check + '，触发机关，损失 ' + (run.floor + 2) + ' 点生命。');
+        hurt(run, run.floor + 2);
+      }
+    } else if (id === 'detour') {
+      run.food--;
+      log(run, '花 1 份口粮绕路，安全通过。');
     }
+    if (run.phase !== 'over') finishRoom(run);
+  }
+  function climb(run, id) {
+    if (id === 'weapon') { run.weapon++; log(run, '武器 +1，每次攻击都更有力。'); }
+    else if (id === 'armor') { run.armor++; log(run, '护甲 +1，每次反击都少受一点伤。'); }
+    else { run.maxHp += 2; log(run, '生命上限 +2。'); heal(run, 8); }
+    if (run.food > 0) { run.food--; log(run, '吃掉 1 份口粮，向上一层出发。'); }
+    else { log(run, '没有口粮，饥饿让你损失 4 点生命。'); hurt(run, 4); }
+    if (run.phase === 'over') return;
+    run.floor++;
+    run.room = 1;
+    dealRooms(run);
+  }
+  function newRun(seed) {
+    var s = Number(seed);
+    if (seed === undefined || seed === null || seed === '' || !Number.isFinite(s)) s = Math.floor(Math.random() * 1000000000);
+    s = Math.abs(Math.trunc(s)) >>> 0;
     var run = {
-      seed: s, rng: s >>> 0,
-      phase: 'combat', floor: 1, maxFloor: FLOORS,
-      hp: 70, maxHp: 75,
-      deck: startDeck(), combat: null, reward: null, log: []
+      version: VERSION, seed: s, rng: s, phase: 'explore', floor: 1, maxFloor: FLOORS, room: 1,
+      hp: 24, maxHp: 24, food: 3, gold: 0, weapon: 1, armor: 0, potions: 1,
+      choices: null, encounter: null, combat: null, lastRoll: null, cleared: 0, kills: 0, log: []
     };
-    beginCombat(run, 1);
+    dealRooms(run);
     return run;
   }
 
-  // 徽章只描述「语义」（几点能量、多少伤害、多少格挡…），画成什么图标由渲染层决定
-  function cardBadges(s) {
-    var b = [{ k: 'cost', v: s.cost }];
-    if (s.dmg) b.push({ k: 'dmg', v: s.times > 1 ? s.dmg + '×' + s.times : s.dmg });
-    if (s.block) b.push({ k: 'blk', v: s.block });
-    if (s.vuln) b.push({ k: 'vuln', v: s.vuln });
-    return b;
+  // 展示文案与可行动条件一起生成，按钮、文字输入和 act 共用同一份合法动作列表。
+  function action(id, name, desc, disabled) {
+    return { id: id, name: name, desc: desc || '', disabled: !!disabled, label: name + (desc ? ' · ' + desc : '') };
   }
-
   function actions(run) {
     if (!run) return [];
-    if (run.phase === 'combat') {
-      var c = run.combat;
-      var list = c.hand.map(function (e, i) {
-        var s = stats(e);
-        var bits = ['· ' + s.cost + '费'];
-        if (s.dmg) bits.push('· ' + s.dmg + '伤' + (s.times > 1 ? '×' + s.times : ''));
-        if (s.block) bits.push('· ' + s.block + '格挡');
-        return {
-          id: 'card:' + i,
-          kind: 'card',
-          name: s.name,
-          badges: cardBadges(s),
-          disabled: c.energy < s.cost,
-          label: NUM[i] + ' ' + s.name + ' ' + bits.join(' ') + (c.energy < s.cost ? '（能量不足）' : '')
-        };
-      });
-      list.push({ id: 'end', kind: 'end', label: '结束回合 ▶' });
-      list.push({ id: 'quit', kind: 'quit', label: '不玩了' });
-      return list;
-    }
-    if (run.phase === 'reward') {
-      var l = run.reward.map(function (id) {
-        var s = stats({ id: id, up: 0 });
-        return {
-          id: 'card:' + id, kind: 'loot', name: s.name, desc: s.desc,
-          badges: cardBadges(s), label: '🃏 ' + CARDS[id].name + ' · ' + CARDS[id].desc
-        };
-      });
-      if (run.hp < run.maxHp) {
-        l.push({ id: 'food', kind: 'food', badges: [{ k: 'heal', v: 6 }], label: '🍞 干粮 · 回复 6 点生命' });
+    var list = [];
+    if (run.phase === 'explore') {
+      list = [action('known', '进入眼前房间', roomView(run.choices[0]).name), action('unknown', '试试另一扇门', '放弃明牌，接受未知遭遇')];
+    } else if (run.phase === 'combat') {
+      list = [action('attack', '掷骰攻击', '1 骰 + 武器 ' + run.weapon),
+        action('power', '口粮强攻', '−1 口粮 · 两骰取高 + 武器 +2', run.food < 1)];
+    } else if (run.phase === 'room') {
+      switch (run.encounter.type) {
+        case 'camp': list = [action('rest', '坐下休息', '回复 7 生命', run.hp === run.maxHp), action('forage', '收集口粮', '+2 口粮')]; break;
+        case 'treasure': list = [action('gold', '拿走金币', '+4 金币'), action('search', '翻找装备', '4–6 成功；失败损失 3 生命')]; break;
+        case 'merchant': list = [action('supply', '购买补给', '4 金币 → 2 口粮、5 生命', run.gold < 4),
+          action('smith', '磨利武器', '6 金币 → 武器 +1' + (run.weapon >= 4 ? '（已满级）' : ''), run.gold < 6 || run.weapon >= 4),
+          action('leave', '继续赶路')]; break;
+        case 'trap': list = [action('disarm', '拆除机关', '4–6 得 3 金币；失败损失 ' + (run.floor + 2) + ' 生命'),
+          action('detour', '绕路通过', '消耗 1 口粮', run.food < 1)]; break;
       }
-      l.push({ id: 'skip', kind: 'skip', label: '跳过' });
-      return l;
+    } else if (run.phase === 'stairs') {
+      list = [action('weapon', '磨利武器', '武器 +1' + (run.weapon >= 4 ? '（已满级）' : ''), run.weapon >= 4),
+        action('armor', '加固护甲', '护甲 +1' + (run.armor >= 2 ? '（已满级）' : ''), run.armor >= 2),
+        action('recover', '养精蓄锐', '生命上限 +2，回复 8 生命')];
+    } else if (run.phase === 'boss') list = [action('enter', '挑战守关者', '生命 26 · 攻击 6')];
+    else if (run.phase === 'won' || run.phase === 'over') list = [action('restart', '再来一局', '新的房间与运气')];
+    if (run.phase !== 'won' && run.phase !== 'over') {
+      list.push(action('potion', '喝药水', '回复 8 生命 · 余 ' + run.potions + ' 瓶', run.potions < 1 || run.hp === run.maxHp));
     }
-    if (run.phase === 'over' || run.phase === 'won') {
-      return [
-        { id: 'restart', kind: 'restart', label: '🔁 再来一局' },
-        { id: 'quit', kind: 'quit', label: '不玩了' }
-      ];
-    }
-    return [];
+    list.push(action('quit', run.phase === 'won' || run.phase === 'over' ? '回去聊天' : '暂存离开'));
+    return list;
   }
-
   function act(run, id) {
-    var r = clone(run);
-    r.log = [];
-
-    if (id === 'quit') {
-      log(r, '好，这局先撂这儿，想接着爬随时喊我。');
-      return { run: r, log: r.log, quit: true };
-    }
+    var selected = actions(run).filter(function (item) { return item.id === id; })[0];
+    // 不合法、重复或禁用的动作不推进随机数，也不改变存档。
+    if (!selected || selected.disabled) return { run: clone(run), log: [], invalid: true };
     if (id === 'restart') {
-      var fresh = newRun(null);
-      fresh.log.push('🃏 好，重新来过 —— 新的塔，新的运气。');
+      var fresh = newRun();
       return { run: fresh, log: fresh.log };
     }
-    if (r.phase === 'combat') {
-      if (id === 'end') endPlayerTurn(r);
-      else if (id.indexOf('card:') === 0) playCard(r, +id.slice(5));
-    } else if (r.phase === 'reward') {
-      if (id === 'skip') {
-        log(r, '你什么都没拿，继续上路。');
-        advance(r);
-      } else if (id === 'food') {
-        r.hp = Math.min(r.maxHp, r.hp + 6);
-        log(r, '你啃了口干粮，回复 6 点生命。');
-        advance(r);
-      } else if (id.indexOf('card:') === 0) {
-        var cid = id.slice(5);
-        if (CARDS[cid]) {
-          r.deck.push(entry(cid));
-          log(r, '你把《' + CARDS[cid].name + '》收进了牌组。');
-          advance(r);
-        }
-      }
-    }
+    var r = clone(run);
+    r.log = [];
+    if (id === 'quit') return { run: r, log: ['好，先回去聊聊。下次说「爬塔」就能继续。'], quit: true };
+    r.lastRoll = null;
+    if (id === 'potion') { r.potions--; heal(r, 8); }
+    else if (r.phase === 'explore') enterRoom(r, id === 'unknown' ? 1 : 0);
+    else if (r.phase === 'combat') fight(r, id === 'power');
+    else if (r.phase === 'room') resolveRoom(r, id);
+    else if (r.phase === 'stairs') climb(r, id);
+    else if (r.phase === 'boss') startBoss(r);
     return { run: r, log: r.log };
   }
-
-  // 文字输入别名：1-9 选牌、卡名选牌、结束回合
   function matchText(run, text) {
     var t = String(text || '').trim();
-    if (!t) return null;
-    if (/^(结束|结束回合|过|end|e|pass)$/i.test(t)) return 'end';
-    if (run && run.phase === 'combat') {
-      var m = t.match(/^([1-9]|10)$/);
-      if (m) {
-        var i = +m[1] - 1;
-        if (run.combat.hand[i]) return 'card:' + i;
-      }
-      for (var k = 0; k < run.combat.hand.length; k++) {
-        if (stats(run.combat.hand[k]).name === t) return 'card:' + k;
-      }
+    var list = actions(run);
+    var number = t.match(/^[1-9]$/);
+    if (number) return list[Number(t) - 1] ? list[Number(t) - 1].id : null;
+    var aliases = {
+      '攻击': 'attack', '掷骰': 'attack', '强攻': 'power', '喝药': 'potion', '药水': 'potion',
+      '明牌': 'known', '暗牌': 'unknown', '休息': 'rest', '口粮': 'forage', '金币': 'gold',
+      '拆除': 'disarm', '绕路': 'detour', '再来': 'restart', '不玩了': 'quit', '退出': 'quit',
+      'quit': 'quit', 'stop': 'quit'
+    };
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].name === t || list[i].id === t.toLowerCase() || aliases[t.toLowerCase()] === list[i].id) return list[i].id;
     }
     return null;
   }
-
-  // ==================== 文本面板 ====================
-  function bar(cur, max) {
-    var n = 12;
-    var f = max > 0 ? Math.round(n * Math.max(0, cur) / max) : 0;
-    if (f > n) f = n;
-    var s = '';
-    for (var i = 0; i < n; i++) s += i < f ? '█' : '░';
-    return s;
-  }
-
-  function render(run) {
-    if (!run) return '';
-    var L = [];
-    L.push('══ 文字爬塔 · 第 ' + run.floor + '/' + run.maxFloor + ' 层 · 种子 ' + run.seed + ' ══');
-    var me = ['[' + bar(run.hp, run.maxHp) + '] ' + Math.max(0, run.hp) + '/' + run.maxHp];
-    if (run.phase === 'combat') {
-      var c = run.combat, e = c.enemy;
-      me.push('⚡' + c.energy + '/' + c.maxEnergy);
-      if (c.block) me.push('🛡' + c.block);
-      if (c.weak) me.push('虚弱×' + c.weak);
-      if (c.vuln) me.push('易伤×' + c.vuln);
-      L.push('你  ' + me.join('  '));
-      var foe = ['[' + bar(e.hp, e.maxHp) + '] ' + Math.max(0, e.hp) + '/' + e.maxHp];
-      if (e.block) foe.push('🛡' + e.block);
-      if (e.dmgBonus) foe.push('攻击+' + e.dmgBonus);
-      if (e.weak) foe.push('虚弱×' + e.weak);
-      if (e.vuln) foe.push('易伤×' + e.vuln);
-      L.push('敌  ' + e.name + (e.boss ? '👑' : '') + ' ' + foe.join('  '));
-      L.push('    ' + intentText(run));
-      L.push('牌堆  抽 ' + c.draw.length + ' · 弃 ' + c.discard.length + ' · 手牌 ' + c.hand.length + ' · 第 ' + c.turn + ' 回合');
-    } else {
-      L.push('你  ' + me.join('  '));
-      if (run.phase === 'reward') L.push('🃏 战利品：挑一张牌收进牌组，或者啃口干粮。');
-      else if (run.phase === 'won') L.push('🏆 通关！这一局的种子是 ' + run.seed + '。');
-      else L.push('💀 你倒在了第 ' + run.floor + ' 层。牌组里还剩 ' + run.deck.length + ' 张牌。');
-    }
-    return L.join('\n');
-  }
-
-  // ==================== 结构化视图 ====================
-  // 给渲染层用的「数据版战况」：渲染层不用懂规则，也不需要自己算虚弱/易伤，
-  // 拿到的每个数字都已经结算过（比如意图伤害已含虚弱和你的易伤）。
-  function cardView(e, i, energy) {
-    var s = stats(e);
-    return {
-      i: i, name: s.name, cost: s.cost, dmg: s.dmg, times: s.times, block: s.block,
-      vuln: s.vuln, playable: energy >= s.cost, badges: cardBadges(s)
-    };
-  }
-
   function view(run) {
     if (!run) return null;
     var v = {
-      floor: run.floor, maxFloor: run.maxFloor, seed: run.seed, phase: run.phase,
-      hp: Math.max(0, run.hp), maxHp: run.maxHp, me: null, foe: null,
-      piles: null, hand: [], loot: null, note: ''
+      phase: run.phase, floor: run.floor, maxFloor: FLOORS, room: run.room, roomsPerFloor: ROOMS,
+      seed: run.seed, hp: run.hp, maxHp: run.maxHp, food: run.food, gold: run.gold,
+      weapon: run.weapon, armor: run.armor, potions: run.potions, cleared: run.cleared, kills: run.kills,
+      known: null, encounter: null, foe: null, turn: null,
+      roll: run.lastRoll ? clone(run.lastRoll) : null, log: run.log.slice(), note: '', rules: RULES
     };
-    if (run.phase === 'combat') {
-      var c = run.combat, e = c.enemy;
-      v.me = { block: c.block, energy: c.energy, maxEnergy: c.maxEnergy, weak: c.weak, vuln: c.vuln };
-      v.foe = {
-        name: e.name, boss: !!e.boss, hp: Math.max(0, e.hp), maxHp: e.maxHp,
-        block: e.block, weak: e.weak, vuln: e.vuln, dmgBonus: e.dmgBonus || 0,
-        intent: e.move ? {
-          kind: e.move.kind, name: e.move.name,
-          dmg: calcDmg(e.move.dmg, e, c),
-          block: e.move.block, buff: e.move.buff, weak: e.move.weak, heal: e.move.heal
-        } : null
-      };
-      v.piles = { draw: c.draw.length, discard: c.discard.length, hand: c.hand.length, turn: c.turn };
-      v.hand = c.hand.map(function (h, i) { return cardView(h, i, c.energy); });
-    } else if (run.phase === 'reward') {
-      v.loot = (run.reward || []).map(function (id) { return cardView({ id: id, up: 0 }, 0, 0); });
-      v.note = '战斗结束，挑一样战利品，然后继续向上。';
-    } else if (run.phase === 'won') {
-      v.note = '第 5 层的守护者倒下了，这一局的种子是 ' + run.seed + '。';
-    } else {
-      v.note = '你倒在了第 ' + run.floor + ' 层，牌组里还剩 ' + run.deck.length + ' 张牌。';
-    }
+    if (run.phase === 'explore') {
+      v.known = roomView(run.choices[0]); // 暗牌内容不进入展示层。
+      v.note = '两扇门，只能选一扇。选了暗门，就不能回头。';
+    } else if (run.phase === 'combat') {
+      v.foe = clone(run.combat.enemy);
+      v.foe.incoming = Math.max(0, v.foe.attack - run.armor);
+      v.turn = run.combat.turn;
+      v.note = '敌人若存活，就反击 ' + v.foe.incoming + ' 点生命；击败它则不反击。';
+    } else if (run.phase === 'room') {
+      v.encounter = roomView(run.encounter);
+      v.note = run.encounter.type === 'merchant' ? '商人只停留片刻，交易一次便继续前行。' : '选一项行动，随后进入下一个房间。';
+    } else if (run.phase === 'stairs') v.note = '选一项成长，再消耗 1 口粮上楼。' + (run.food ? '目前还有 ' + run.food + ' 份。' : '口粮不足，将损失 4 生命。');
+    else if (run.phase === 'boss') v.note = '最后的守关者：26 生命、6 攻击。可以先喝药，再推开塔顶的门。';
+    else if (run.phase === 'won') v.note = '穿过三层地牢，带着 ' + run.gold + ' 金币平安归来。';
+    else v.note = '倒在第 ' + run.floor + ' 层，已探索 ' + run.cleared + ' 间房。换条路，再试一次。';
     return v;
   }
 
-  window.Spire = {
-    newRun: newRun,
-    actions: actions,
-    act: act,
-    render: render,
-    view: view,
-    matchText: matchText,
-    // 供渲染层做提示文案用
-    cardName: function (id) { return CARDS[id] ? CARDS[id].name : id; }
-  };
+  // 版本不兼容或损坏的存档不能进入引擎，避免刷新后出现无法操作的局面。
+  function isValidRun(run) {
+    function int(value, min, max) { return Number.isInteger(value) && value >= min && value <= max; }
+    function enemy(value) {
+      return value && typeof value.name === 'string' && typeof value.icon === 'string' &&
+        int(value.hp, 0, 100) && int(value.maxHp, 1, 100) && value.hp <= value.maxHp &&
+        int(value.attack, 0, 20) && typeof value.boss === 'boolean';
+    }
+    function room(value) {
+      return value && (value.type === 'monster' ? enemy(value.enemy) : Object.prototype.hasOwnProperty.call(ROOMS_INFO, value.type));
+    }
+    if (!run || run.version !== VERSION || !int(run.seed, 0, 4294967295) || !int(run.rng, 0, 4294967295) ||
+      !int(run.floor, 1, FLOORS) || run.maxFloor !== FLOORS || !int(run.room, 1, ROOMS) ||
+      !int(run.maxHp, 1, 50) || !int(run.hp, 0, run.maxHp) || !int(run.food, 0, 100) ||
+      !int(run.gold, 0, 1000) || !int(run.weapon, 1, 4) || !int(run.armor, 0, 2) || !int(run.potions, 0, 1) ||
+      !int(run.cleared, 0, 9) || !int(run.kills, 0, 10) || !Array.isArray(run.log) ||
+      !run.log.every(function (line) { return typeof line === 'string'; })) return false;
+    if (run.lastRoll !== null && (!run.lastRoll || typeof run.lastRoll.purpose !== 'string' ||
+      !Array.isArray(run.lastRoll.values) || !int(run.lastRoll.values.length, 1, 2) ||
+      !run.lastRoll.values.every(function (value) { return int(value, 1, 6); }))) return false;
+    if (run.phase === 'over') return run.hp === 0;
+    if (run.hp === 0) return false;
+    if (run.phase === 'won') return run.floor === FLOORS && run.cleared === 9;
+    if (run.phase === 'explore') return Array.isArray(run.choices) && run.choices.length === 2 && run.choices.every(room);
+    if (run.phase === 'combat') return run.combat && enemy(run.combat.enemy) && run.combat.enemy.hp > 0 && int(run.combat.turn, 1, 100);
+    if (run.phase === 'room') return room(run.encounter) && run.encounter.type !== 'monster';
+    if (run.phase === 'stairs') return run.floor < FLOORS && run.room === ROOMS;
+    return run.phase === 'boss' && run.floor === FLOORS && run.room === ROOMS;
+  }
+  function render(run) {
+    var v = view(run);
+    if (!v) return '';
+    var lines = ['口袋地牢 · 第 ' + v.floor + '/3 层 · 房间 ' + v.room + '/3',
+      '生命 ' + v.hp + '/' + v.maxHp + ' · 口粮 ' + v.food + ' · 金币 ' + v.gold,
+      '武器 +' + v.weapon + ' · 护甲 ' + v.armor + ' · 药水 ' + v.potions];
+    if (v.known) lines.push('眼前：' + v.known.name + '；另一扇门：未知。');
+    if (v.encounter) lines.push(v.encounter.name + '：' + v.encounter.desc);
+    if (v.foe) lines.push(v.foe.name + ' ' + v.foe.hp + '/' + v.foe.maxHp + ' · 攻击 ' + v.foe.attack);
+    return lines.concat(v.log, [v.note]).join('\n');
+  }
+  window.Spire = { newRun: newRun, actions: actions, act: act, view: view, render: render, matchText: matchText, isValidRun: isValidRun };
 })();

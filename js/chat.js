@@ -258,6 +258,7 @@
     var time = new Date(opts.ts || Date.now());
     var ts = ('0' + time.getHours()).slice(-2) + ':' + ('0' + time.getMinutes()).slice(-2);
     li.innerHTML = '<div class="bubble">' + html + '</div><span class="ts">' + ts + '</span>';
+    if (li.querySelector('.sd')) li.classList.add('spire-response');
     $msgs.appendChild(li);
     scrollBottom();
     if (!opts.restore) saveMsg(side, html);
@@ -283,6 +284,11 @@
     chain = chain.then(function () {
       return items.reduce(function (p, item) {
         return p.then(function () {
+          if (item && item.instant) {
+            addMsg('bot', item.html);
+            if (item.onShown) item.onShown();
+            return;
+          }
           typingOn();
           return delay(rand(theme.typingDelay[0], theme.typingDelay[1])).then(function () {
             typingOff();
@@ -382,16 +388,15 @@
     navigator.clipboard.writeText(text).then(function () { btn.textContent = '已复制 ✓'; });
   });
 
-  // ---- 文字爬塔：按钮驱动的卡牌 Roguelike ----
-  // 引擎（js/spire.js）只吃 run、吐 {run, log}；这里负责按钮、文案和存档。
-  // 存档 key 跟聊天历史分开：聊天历史只存 HTML，刷新后按钮是死的，局面必须另存。
-  var SPIRE_KEY = 'homepage.spire.v1';
-  var spire = null; // 当前这一局；null = 不在局中
+  // ---- 口袋地牢：房间二选一 + 骰子战斗 ----
+  var SPIRE_KEY = 'homepage.spire.v2';
+  var spire = null;
+  var spireReady = false;
 
   function spireLoad() {
     try {
-      var s = JSON.parse(localStorage.getItem(SPIRE_KEY));
-      return (s && s.phase && s.deck) ? s : null;
+      var saved = JSON.parse(localStorage.getItem(SPIRE_KEY));
+      return window.Spire && window.Spire.isValidRun(saved) ? saved : null;
     } catch (e) { return null; }
   }
 
@@ -400,174 +405,164 @@
   function spireSave() {
     try {
       if (spire) localStorage.setItem(SPIRE_KEY, JSON.stringify(spire));
-      else localStorage.removeItem(SPIRE_KEY);
     } catch (e) {}
   }
 
-  // ---- 爬塔的展示层 ----
-  // 引擎只给语义数据（几点能量、多少伤害、什么状态），图标和配色都在这一层决定；
-  // 面板里的每个数字都来自 Spire.view()，渲染层不重算任何规则。
-  var SPIRE_ICON = { cost: '⚡', dmg: '⚔', blk: '🛡', vuln: '💥', weak: '💧', heal: '✚', hp: '❤', buff: '💢' };
-
-  function spireBadge(k, v, icon) {
-    var ic = icon === undefined ? (SPIRE_ICON[k] || '') : icon;
-    return '<i class="sb-b sb-' + k + '">' +
-      (ic ? '<span aria-hidden="true">' + ic + '</span>' : '') + esc(String(v)) + '</i>';
-  }
-
-  function spireBadges(list) {
-    return (list || []).map(function (b) { return spireBadge(b.k, b.v); }).join('');
-  }
-
-  // 日志高亮：引擎日志保持纯文本（可测、可复制），这里只把关键数字换成带图标的强调
-  var SPIRE_LOG_RULES = [
-    [/造成 (\d+) 点伤害/g, '造成 <b class="lg lg-dmg">⚔$1</b> 点伤害'],
-    [/获得 (\d+) 点格挡/g, '获得 <b class="lg lg-blk">🛡$1</b> 点格挡'],
-    [/回复了? (\d+) 点生命/g, '回复 <b class="lg lg-heal">✚$1</b> 点生命'],
-    [/获得 (\d+) 层易伤/g, '获得 <b class="lg lg-vuln">💥$1</b> 层易伤'],
-    [/获得 (\d+) 层虚弱/g, '获得 <b class="lg lg-weak">💧$1</b> 层虚弱'],
-    [/还剩 (\d+) 点生命/g, '还剩 <b class="lg lg-hp">❤$1</b> 点生命'],
-    [/剩余 (\d+) 点生命/g, '剩余 <b class="lg lg-hp">❤$1</b> 点生命'],
-    [/格挡吸收 (\d+)/g, '格挡吸收 <b class="lg lg-blk">🛡$1</b>'],
-    [/能量 (\d+)/g, '能量 <b class="lg lg-cost">⚡$1</b>'],
-    [/需要 (\d+) 点/g, '需要 <b class="lg lg-cost">⚡$1</b> 点']
-  ];
-
-  function spireLog(line) {
-    var h = esc(line);
-    SPIRE_LOG_RULES.forEach(function (r) { h = h.replace(r[0], r[1]); });
-    return h;
-  }
-
   function spireHpBar(cur, max) {
-    var pct = max > 0 ? Math.round(cur / max * 100) : 0;
+    var pct = max > 0 ? Math.max(0, Math.min(100, Math.round(cur / max * 100))) : 0;
     return '<span class="sb-hp' + (pct <= 25 ? ' low' : '') + '"><i style="width:' + pct + '%"></i>' +
       '<b>' + cur + '/' + max + '</b></span>';
   }
 
-  function spireEnergy(cur, max) {
-    var pips = '';
-    for (var i = 0; i < max; i++) pips += '<span class="pip ' + (i < cur ? 'on' : 'off') + '">⚡</span>';
-    return '<i class="sb-b sb-cost sb-energy" title="能量">' + pips + '<b>' + cur + '/' + max + '</b></i>';
+  // 内联线条图标不依赖系统的 emoji 字体。
+  function spireIcon(name) {
+    var paths = {
+      bat: '<path d="M12 10 9 6 8 9 2 5l1 10 5-2 4 6 4-6 5 2 1-10-6 4-1-3z"/>',
+      golem: '<path d="m6 3 12 1 3 6-2 11H5L3 10zM8 9h1m6 0h1M9 16h6"/>',
+      skeleton: '<path d="M5 14a9 9 0 1 1 14 0l-3 2v5H8v-5zM11 17v4m2-4v4"/><circle cx="8" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/><path d="m11 14 1-2 1 2"/>',
+      camp: '<path d="M12 2c2 6 7 7 7 12a7 7 0 0 1-14 0c0-3 2-5 4-7 0 3 1 4 2 4 2-2 1-6 1-9zM9 22l8-2m-10 0 8 2"/>',
+      treasure: '<path d="M3 11V8a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v3M3 11h18v10H3zM7 3v8m10-8v8"/><rect x="10" y="9" width="4" height="5" rx="1"/>',
+      merchant: '<path d="M9 5V3a3 3 0 0 1 6 0v2M6 6h12l2 13H4zM7 22h10M8 6l1 13m7-13-1 13M9 11h6"/>',
+      trap: '<path d="M2 20h20M3 20l3-10 3 10 3-14 3 14 3-10 3 10M5 4h3m9 0h2"/>',
+      boss: '<path d="m3 6 5 5 4-8 4 8 5-5-2 13H5zM5 22h14"/>',
+      unknown: '<path d="M5 22V3h14v19M2 22h20M10 9a2 2 0 1 1 3 2c-1 1-1 2-1 2m0 3v.1"/>'
+    };
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || paths.unknown) + '</svg>';
   }
 
-  // 敌人意图：图标 + 招式名 + 已经结算过的数字
-  function spireIntent(it) {
-    if (!it) return '';
-    if (it.kind === 'block') return spireBadge('blk', it.name + ' +' + it.block, '🛡');
-    if (it.kind === 'buff') return spireBadge('buff', it.name + ' 攻击+' + it.buff, '💢');
-    var extra = '';
-    if (it.weak) extra += ' +' + it.weak + '虚弱';
-    if (it.heal) extra += ' +回复' + it.heal;
-    return spireBadge('atk', it.name + ' ' + it.dmg + extra, '⚔');
+  function spireDie(value) {
+    var positions = {
+      1: [[12, 12]], 2: [[6, 6], [18, 18]], 3: [[6, 6], [12, 12], [18, 18]],
+      4: [[6, 6], [18, 6], [6, 18], [18, 18]],
+      5: [[6, 6], [18, 6], [12, 12], [6, 18], [18, 18]],
+      6: [[6, 6], [18, 6], [6, 12], [18, 12], [6, 18], [18, 18]]
+    };
+    return '<svg viewBox="0 0 24 24" role="img" aria-label="骰子 ' + value + ' 点"><rect x="1" y="1" width="22" height="22" rx="4" fill="none" stroke="currentColor"/>' +
+      positions[value].map(function (point) { return '<circle cx="' + point[0] + '" cy="' + point[1] + '" r="1.6" fill="currentColor"/>'; }).join('') + '</svg>';
+  }
+
+  function spireRoomCard(icon, tag, name, desc, hidden) {
+    return '<div class="sd-room' + (hidden ? ' sd-hidden' : '') + '"><span class="sd-room-tag">' + esc(tag) + '</span>' +
+      '<span class="sd-room-icon" aria-hidden="true">' + spireIcon(icon) + '</span><strong>' + esc(name) + '</strong>' +
+      '<span class="sd-room-desc">' + esc(desc) + '</span></div>';
   }
 
   function spireBoard(run) {
-    var v = window.Spire ? window.Spire.view(run) : null;
-    if (!v) return '';
-    var h = '<div class="sb">';
-    h += '<div class="sb-head"><span class="sb-floor">第 ' + v.floor + '/' + v.maxFloor + ' 层</span>' +
-      '<span class="sb-seed">种子 ' + esc(String(v.seed)) + '</span></div>';
-
-    if (v.phase === 'combat') {
-      var me = spireEnergy(v.me.energy, v.me.maxEnergy);
-      if (v.me.block) me += spireBadge('blk', v.me.block);
-      if (v.me.vuln) me += spireBadge('vuln', '易伤 ' + v.me.vuln);
-      if (v.me.weak) me += spireBadge('weak', '虚弱 ' + v.me.weak);
-      h += '<div class="sb-row sb-me"><span class="sb-who">你</span>' + spireHpBar(v.hp, v.maxHp) +
-        '<span class="sb-chips">' + me + '</span></div>';
-
-      var f = v.foe, foe = spireIntent(f.intent);
-      if (f.block) foe += spireBadge('blk', f.block);
-      if (f.dmgBonus) foe += spireBadge('buff', '攻击+' + f.dmgBonus);
-      if (f.vuln) foe += spireBadge('vuln', '易伤 ' + f.vuln);
-      if (f.weak) foe += spireBadge('weak', '虚弱 ' + f.weak);
-      h += '<div class="sb-row sb-foe"><span class="sb-who">' + esc(f.name) + (f.boss ? '👑' : '') + '</span>' +
-        spireHpBar(f.hp, f.maxHp) + '<span class="sb-chips">' + foe + '</span></div>';
-
-      h += '<div class="sb-foot"><span>🎴 抽牌 ' + v.piles.draw + '</span><span>♻ 弃牌 ' + v.piles.discard +
-        '</span><span>✋ 手牌 ' + v.piles.hand + '</span><span>🕒 第 ' + v.piles.turn + ' 回合</span></div>';
-    } else {
-      h += '<div class="sb-row sb-me"><span class="sb-who">你</span>' + spireHpBar(v.hp, v.maxHp) + '</div>';
-      if (v.phase === 'won') h += '<div class="sb-result sb-win">🏆 通关</div>';
-      else if (v.phase === 'over') h += '<div class="sb-result sb-lose">💀 阵亡</div>';
-      if (v.loot && v.loot.length) {
-        h += '<div class="sb-loot">' + v.loot.map(function (c) {
-          return '<span class="sb-card">' + esc(c.name) + spireBadges(c.badges) + '</span>';
-        }).join('') + '</div>';
-      }
-      if (v.note) h += '<div class="sb-note">' + esc(v.note) + '</div>';
+    var v = window.Spire.view(run);
+    var h = '<div class="sb sd" data-phase="' + esc(v.phase) + '">';
+    h += '<div class="sd-heading"><strong>口袋地牢</strong><span>第 ' + v.floor + ' / 3 层</span></div>';
+    h += '<div class="sd-route" aria-label="已探索 ' + v.cleared + ' / 9 间房">';
+    for (var i = 0; i < 9; i++) {
+      h += '<span class="sd-step' + (i < v.cleared ? ' done' : i === v.cleared ? ' current' : '') +
+        (i === 3 || i === 6 ? ' sd-step-floor' : '') + '" aria-hidden="true"></span>';
     }
+    h += '<span class="sd-route-end" aria-hidden="true">♜</span><small>' + (v.cleared === 9 ? '塔顶' : '房间 ' + v.room + ' / 3') + '</small></div>';
+    h += '<div class="sb-row sb-me"><span class="sb-who">生命</span>' + spireHpBar(v.hp, v.maxHp) + '</div>';
+    h += '<div class="sd-resources"><span>口粮 <b>' + v.food + '</b></span><span>金币 <b>' + v.gold +
+      '</b></span><span>武器 <b>+' + v.weapon + '</b></span><span>护甲 <b>' + v.armor + '</b></span><span>药水 <b>' + v.potions + '</b></span></div>';
+    if (v.known) {
+      h += '<div class="sd-rooms">' + spireRoomCard(v.known.icon, '明牌 · 看得见的选择', v.known.name, v.known.desc, false) +
+        spireRoomCard('unknown', '暗牌 · 试试运气', '另一扇门', '也许是补给，也许是危险。推开后必须接受。', true) + '</div>';
+    } else if (v.foe) {
+      h += '<div class="sd-enemy"><div class="sd-enemy-head"><strong><span aria-hidden="true">' + spireIcon(v.foe.icon) + '</span> ' + esc(v.foe.name) +
+        '</strong><span>第 ' + v.turn + ' 回合</span></div><div class="sb-row sb-foe">' + spireHpBar(v.foe.hp, v.foe.maxHp) +
+        '<span class="sd-enemy-attack">攻击 ' + v.foe.attack + '</span></div></div>';
+    } else if (v.encounter) {
+      h += '<div class="sd-encounter"><span aria-hidden="true">' + spireIcon(v.encounter.icon) + '</span><div><strong>' + esc(v.encounter.name) + '</strong><p>' + esc(v.encounter.desc) + '</p></div></div>';
+    } else if (v.phase === 'stairs') {
+      h += '<div class="sd-milestone"><span aria-hidden="true">↟</span><strong>歇一歇，再上一层</strong><p>带上一点成长，前面还有新的房间。</p></div>';
+    } else if (v.phase === 'boss') {
+      h += '<div class="sd-milestone"><span aria-hidden="true">♜</span><strong>最后一扇门</strong><p>塔顶守关者，正在等你。</p></div>';
+    } else {
+      h += '<div class="sb-result ' + (v.phase === 'won' ? 'sb-win' : 'sb-lose') + '">' +
+        (v.phase === 'won' ? '✦ 满载而归' : '营火，等你再来') + '</div>';
+      h += '<div class="sd-summary">探索 ' + v.cleared + ' 间房 · 击败 ' + v.kills + ' 个敌人 · 带回 ' + (v.phase === 'won' ? v.gold : 0) + ' 金币</div>';
+    }
+    if (v.roll) {
+      h += '<div class="sd-roll"><span>' + esc(v.roll.purpose) + '</span><span class="sd-dice">' + v.roll.values.map(function (n) {
+        return spireDie(n);
+      }).join('') + '</span></div>';
+    }
+    if (v.log.length) h += '<div class="sd-log">' + v.log.map(function (line) { return '<p>' + esc(line) + '</p>'; }).join('') + '</div>';
+    h += '<p class="sb-note">' + esc(v.note) + '</p>';
+    h += '<details class="sd-rules"><summary>玩法小抄<span>种子 ' + v.seed + '</span></summary><p>' + esc(v.rules) + '</p>' +
+      '<p>点下方按钮，或输入按钮前的数字。随时「暂存离开」，下次说「爬塔」继续。</p></details>';
     return h + '</div>';
   }
 
-  // 卡牌按钮：名字 + 徽章（渲染层不认识「费 / 伤 / 格挡」，只认引擎给的 k）
-  function spireActionItem(a) {
-    var isCard = (a.kind === 'card' || a.kind === 'loot');
-    var cls = 'spire-action';
-    var html = null;
-    if (isCard) {
-      cls += ' sa-card' + (a.disabled ? ' sa-off' : '');
-      html = '<b class="sa-name">' + esc(a.name) + '</b>' + spireBadges(a.badges) +
-        (a.desc ? '<span class="sa-desc">' + esc(a.desc) + '</span>' : '');
-    } else if (a.badges && a.badges.length) {
-      html = '<span class="sa-name">' + esc(a.label) + '</span>' + spireBadges(a.badges);
-    }
-    return { label: a.label, cls: cls, html: html, action: function () { spireAct(a.id); } };
-  }
-
-  // 引擎给什么动作就渲染什么按钮；每次状态变更整组重建 = 天然的状态渲染
   function spireRender(run) {
-    var acts = window.Spire ? window.Spire.actions(run) : [];
-    renderQuickReplies(acts.map(spireActionItem));
+    var snapshot = run;
+    renderQuickReplies(window.Spire.actions(run).map(function (a, index) {
+      var utility = a.id === 'potion' || a.id === 'quit';
+      return {
+        label: (index + 1) + ' ' + a.label,
+        cls: 'spire-action' + (utility ? ' sa-utility' : ' sa-choice'),
+        disabled: a.disabled || !spireReady,
+        html: '<span class="sa-title"><small>' + (index + 1) + '</small><b>' + esc(a.name) + '</b></span>' +
+          (a.desc ? '<span class="sa-desc">' + esc(a.desc) + '</span>' : ''),
+        action: function () { if (spire === snapshot) spireAct(a.id); }
+      };
+    }));
   }
 
   function spirePanel(run) {
-    return { html: spireBoard(run) };
+    return { html: spireBoard(run), instant: true, onShown: function () {
+      if (spire === run) {
+        spireReady = true;
+        spireRender(run);
+        // 按钮高度变化后重新定位；面板高于消息区时优先露出标题和资源。
+        var panel = $msgs.lastElementChild;
+        $msgs.scrollTop += panel.getBoundingClientRect().top - $msgs.getBoundingClientRect().top - 8;
+      }
+    } };
   }
 
-  // 状态先改完再发言：botSay 是异步打字链，绝不能把状态变更放在它的回调里
   function spireAct(id) {
-    if (!spire || !window.Spire) return;
+    if (!spire || !spireReady || !window.Spire) return;
     var res = window.Spire.act(spire, id);
+    if (res.invalid) {
+      botSay([{ html: '这个行动暂时不可用，看看口粮、金币或生命是否满足条件。', instant: true }]);
+      return;
+    }
     if (res.quit) {
-      // 退出也留着存档，回头说「爬塔」能接着打
       spire = null;
+      spireReady = false;
       try { localStorage.setItem(SPIRE_KEY, JSON.stringify(res.run)); } catch (e) {}
       renderQuickReplies();
-      botSay(res.log.map(spireLog));
+      botSay(res.log);
       return;
     }
     spire = res.run;
+    spireReady = false;
     spireSave();
     spireRender(spire);
-    botSay(res.log.map(spireLog).concat([spirePanel(spire)]));
+    botSay([spirePanel(spire)]);
   }
 
   function spireBegin(seed) {
     spire = window.Spire.newRun(seed);
-    var opening = spire.log.slice();
-    spire.log = [];
+    spireReady = false;
     spireSave();
     spireRender(spire);
     return [
-      '🃏 开爬！规则很简单：每回合 3 点能量，用《劈砍》《格挡》《猛击》把挡路的家伙敲掉，一直打到第 5 层的 Boss。',
-      '点下面的按钮出牌，也可以直接输入 1/2/3 或「结束回合」；不想玩了就说「不玩了」。'
-    ].concat(opening).concat([spirePanel(spire)]);
+      '提灯出发！这次是三层的「口袋地牢」：选房间、掷骰战斗、留点口粮上楼，最后击败塔顶守关者。点下方按钮就能玩，规则随时看面板里的「玩法小抄」。',
+      spirePanel(spire)
+    ];
   }
 
   function spireResume(saved) {
     spire = saved;
+    spireReady = false;
     spireSave();
     spireRender(spire);
-    botSay(['接着来。'].concat([spirePanel(spire)]));
+    botSay([{ html: '灯还亮着，接着走。', instant: true }, spirePanel(spire)]);
   }
 
   function startSpire() {
     if (!window.Spire) return ['爬塔模块没加载出来，刷新试试？'];
     if (spire && !spireFinished(spire)) {
       spireRender(spire);
-      return ['这一局还打着呢 —— 接着出牌吧。想撂下就说「不玩了」。'];
+      return ['还在地牢里呢，点下面的按钮继续。想歇歇就「暂存离开」。'];
     }
     spire = null;
     var saved = spireLoad();
@@ -575,14 +570,18 @@
       renderQuickReplies([
         { label: '继续这局', cls: 'spire-action', action: function () { spireResume(saved); } },
         { label: '重新开一局', cls: 'spire-action', action: function () { botSay(spireBegin()); } },
-        { label: '算了', action: function () { renderQuickReplies(); } }
+        { label: '先聊聊', action: function () { renderQuickReplies(); } }
       ]);
-      return [
-        '上次爬到第 ' + saved.floor + ' 层，❤ ' + saved.hp + '/' + saved.maxHp + '，牌组 ' + saved.deck.length + ' 张。',
-        '接着爬，还是重新来过？'
-      ];
+      return ['上次停在第 ' + saved.floor + ' 层，生命 ' + saved.hp + '/' + saved.maxHp +
+        '，口粮 ' + saved.food + '，金币 ' + saved.gold + '。继续这局，还是重新出发？'];
     }
-    return spireBegin();
+    var legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem('homepage.spire.v1')); } catch (e) {}
+    var opening = spireBegin();
+    if (!saved && legacy && legacy.deck && !spireFinished(legacy)) {
+      opening.unshift('爬塔已换成轻量的骰子地牢。旧版卡牌存档已保留，但无法按新规则续玩；这次会单独保存。');
+    }
+    return opening;
   }
 
   // ---- 私信小纸条：访客写留言，直接进站主邮箱 ----
@@ -716,12 +715,12 @@
       else liuyaoToss();
       return;
     }
-    // 牌局进行中：输入接管（文字别名 / 退出），否则提示，避免闲聊把按钮冲掉
+    // 地牢进行中：数字与行动名称接管输入，避免闲聊冲掉游戏按钮
     if (spire) {
       if (/^(不玩了|退出|放弃|quit|stop)$/i.test(text)) { spireAct('quit'); return; }
       var spireMove = window.Spire ? window.Spire.matchText(spire, text) : null;
       if (spireMove) { spireAct(spireMove); return; }
-      botSay(['现在在牌局里 —— 点下面的按钮行动，或者输入 1/2/3 选牌、「结束回合」；不想玩了就说「不玩了」。']);
+      botSay(['还在地牢里。点下方按钮，或输入按钮前的数字，也可以说「攻击」「强攻」「喝药」。输入「不玩了」会暂存离开。']);
       return;
     }
     // 任何输入都先悄悄试一次口令；命中则原地切到隐藏主题，未命中走正常路由
@@ -748,10 +747,12 @@
 
   function renderQuickReplies(items) {
     $quick.innerHTML = '';
+    $quick.classList.toggle('spire-controls', !!(spire && items));
     (items && items.length ? items : theme.quickReplies.concat(noteEntry())).forEach(function (q) {
       var btn = document.createElement('button');
       btn.type = 'button';
-      // html 用于带徽章的按钮（爬塔的卡牌），label 同时作为读屏名称和点击后的回显
+      btn.disabled = !!q.disabled;
+      // label 同时作为读屏名称和点击后的回显；禁用动作也使用原生 disabled。
       if (q.html) btn.innerHTML = q.html; else btn.textContent = q.label;
       btn.setAttribute('aria-label', q.label);
       if (q.cls) btn.className = q.cls;
@@ -776,6 +777,11 @@
     localStorage.removeItem(STORE_KEY);
     $msgs.innerHTML = '';
     greet(false);
+    if (spire) {
+      spireReady = false;
+      spireRender(spire);
+      botSay([spirePanel(spire)]);
+    }
   });
 
   // ---- 开场 ----
@@ -802,7 +808,9 @@
     theme = t;
     ThemeEngine.apply(t);
     applyPersona();
-    renderQuickReplies();
+    if (spire) spireRender(spire);
+    else if (liuyao) renderQuickReplies(liuyaoReplies());
+    else renderQuickReplies();
     syncParticles();
     if (window.AmbientAudio) window.AmbientAudio.setTheme(theme);
     return true;
@@ -845,10 +853,10 @@
     } else {
       greet(false);
     }
-    // 有没打完的牌局就提一句；入口不占常驻快捷回复
+    // 有没走完的地牢就提一句；入口不占常驻快捷回复
     var savedRun = spireLoad();
     if (savedRun && !spireFinished(savedRun)) {
-      botSay(['（对了，上次那局爬塔还停在第 ' + savedRun.floor + ' 层，说「爬塔」就能接着打。）']);
+      botSay(['（对了，上次那局爬塔还停在第 ' + savedRun.floor + ' 层，说「爬塔」就能接着走。）']);
     }
     scheduleThemeRefresh();
 
