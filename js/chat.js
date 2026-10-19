@@ -62,6 +62,14 @@
     $music.textContent = musicOn ? '音乐：开' : '音乐：关';
   }
 
+  document.addEventListener('musicchange', function (event) {
+    if (musicOn !== event.detail.enabled) {
+      musicOn = event.detail.enabled;
+      try { localStorage.setItem(MUSIC_KEY, musicOn ? 'on' : 'off'); } catch (e) {}
+    }
+    renderMusicBtn();
+  });
+
   $music.addEventListener('click', function () {
     musicOn = !musicOn;
     try { localStorage.setItem(MUSIC_KEY, musicOn ? 'on' : 'off'); } catch (e) {}
@@ -115,7 +123,7 @@
   // 有经纬度 + 时间即可本地算太阳高度角，无需网络。每分钟检查一次。
   var blueTimer = null;
   // 蓝调时刻曲目：本地文件名（对应 assets/audio/<名字>.mp3）或 http(s) 直链
-  var BLUEHOUR_TRACK = 'https://cdn.pixabay.com/audio/2026/06/23/audio_c81d83c3db.mp3';
+  var BLUEHOUR_TRACK = 'reverie';
 
   function sunElevation(lat, lon, date) {
     var rad = Math.PI / 180;

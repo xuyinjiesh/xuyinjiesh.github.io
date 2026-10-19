@@ -149,6 +149,14 @@ html[data-loading] .site-content { opacity: 0; transform: translateY(12px); }
 .conversation-heading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 23px 24px 8px; flex-shrink: 0; }
 .conversation-heading p { font-size: .62rem; color: var(--muted); letter-spacing: .07em; }
 .conversation-heading > span { width: 28px; height: 1px; background: var(--hairline); }
+.now-playing { display: flex; align-items: center; gap: 9px; margin: 10px 22px 0; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; background: rgba(255,255,255,.025); flex-shrink: 0; }
+.music-note { color: var(--accent); font-size: 20px; }
+.music-details { min-width: 0; flex: 1; }
+.music-details > span:first-child { display: block; color: var(--muted); font-size: .55rem; margin-bottom: 4px; }
+.music-details > a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; color: var(--text); text-decoration: none; }
+.music-details > a:hover { text-decoration: underline; }
+.music-details > span:last-child { display: block; font-size: .58rem; color: var(--muted); margin-top: 3px; }
+.music-license { flex-shrink: 0; font: .56rem ui-monospace, monospace; color: var(--accent); text-decoration: none; border: 1px solid var(--hairline); padding: 5px 6px; border-radius: 6px; }
 
 /* ---- 消息流 ---- */
 .messages {
@@ -379,6 +387,7 @@ html[data-loading] .site-content { opacity: 0; transform: translateY(12px); }
 .composer button:active { transform: scale(.95); }
 .composer button span { margin-left: 6px; }
 .composer-note { color: var(--muted); font-size: .55rem; text-align: center; padding: 5px 16px 17px; flex-shrink: 0; letter-spacing: .04em; }
+.composer-note a { color: var(--muted); margin-left: 8px; text-underline-offset: 3px; }
 
 /* ---- 起始页：环绕二十四刻的太阳 ---- */
 .page-loader { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--bg-2); visibility: hidden; opacity: 0; pointer-events: none; transition: opacity .6s ease, visibility .6s; }
@@ -530,6 +539,8 @@ html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-mo
   .site-footer { min-height: calc(32px + env(safe-area-inset-bottom)); }
   .chat-header { padding: 12px; }
   .conversation-heading { padding: 12px 12px 5px; }
+  .now-playing { margin: 6px 12px 0; padding: 7px 9px; }
+  .music-details > span:first-child { display: none; }
   .quick-replies { flex-wrap: nowrap; overflow-x: auto; padding: 8px 12px 4px; scrollbar-width: thin; }
   .quick-replies button { flex-shrink: 0; white-space: nowrap; }
   .composer { padding: 6px 12px 12px; }

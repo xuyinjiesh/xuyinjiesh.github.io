@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../../js/audio.js'), 'utf8');
 
-function environment({ blocked = false, delayed = false } = {}) {
+function environment({ blocked = false, delayed = false, library = false } = {}) {
   let now = 0, id = 0;
   const timers = new Map(), audios = [];
   function target(extra = {}) {
@@ -43,11 +43,16 @@ function environment({ blocked = false, delayed = false } = {}) {
     clearTimeout(key) { timers.delete(key); },
     requestAnimationFrame() { throw Error('rAF is unavailable in background tabs'); }
   };
+  if (library) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../js/music.js'), 'utf8'), context);
   vm.runInNewContext(source, context);
   const api = window.AmbientAudio;
   api.setTheme({ id: 'test', music: 'https://example.com/music.mp3' });
   return {
     api, audios, window, document,
+    chooseTheme(id) {
+      const tracks = window.MusicLibrary.forTheme(id);
+      api.setTheme({ id, music: tracks[0].src, musicTrack: tracks[0], musicFallbacks: tracks.slice(1) });
+    },
     unblock() { blocked = false; },
     hidden(value) { document.hidden = value; document.emit('visibilitychange'); },
     advance(ms) {
@@ -145,4 +150,27 @@ cancelledMood.advance(3000);
 assert.equal(cancelledMood.audios[1].src, '');
 assert.equal(cancelledMood.audios[1].paused, true);
 
-console.log('Passed audio fades, quick tab switches, playback position, background track changes, weather layer, manual stop, cache restore, slow loading and autoplay retry without rAF.');
+const catalog = environment({ library: true });
+catalog.chooseTheme('yushui'); catalog.api.setEnabled(true); catalog.advance(1500);
+assert.equal(catalog.audios[0].src, 'assets/audio/music/water-lily.mp3');
+assert.equal(catalog.api.getState().track.artist, 'Kevin MacLeod');
+catalog.audios[0].emit('error');
+assert.equal(catalog.audios[0].src, 'assets/audio/music/gymnopedie-1.mp3');
+assert.equal(catalog.api.getState().track.id, 'gymnopedie-1');
+catalog.chooseTheme('xiaoxue'); catalog.advance(3000);
+const plays = catalog.audios[0].plays;
+catalog.chooseTheme('daxue'); catalog.advance(2000);
+assert.equal(catalog.audios[0].plays, plays, 'Shared recordings must keep their playback position');
+catalog.api.setMoment('reverie'); catalog.advance(3000);
+assert.equal(catalog.api.getState().track.id, 'reverie');
+const momentPlays = catalog.audios[0].plays;
+catalog.chooseTheme('mid-autumn'); catalog.advance(2000);
+assert.equal(catalog.audios[0].plays, momentPlays, 'An active blue-hour track must keep playing across themes');
+catalog.api.setMoment(null); catalog.advance(3000);
+assert.equal(catalog.api.getState().track.id, 'clair-de-lune');
+assert.equal(catalog.api.getState().track.license, 'CC BY 3.0');
+for (let i = 0; i < 20; i++) catalog.audios[0].emit('error');
+assert.equal(catalog.api.getState().state, 'unavailable');
+assert.equal(catalog.api.isEnabled(), true);
+
+console.log('Passed audio lifecycle, catalog fallback attribution, shared-track continuity, blue-hour changes, and exhausted-source handling without rAF.');

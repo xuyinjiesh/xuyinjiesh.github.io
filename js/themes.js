@@ -132,7 +132,6 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'lanterns', density: 14 },
-      music: "https://cdn.pixabay.com/audio/2026/01/14/audio_3265c1aace.mp3",
       persona: { name: '我', avatar: '🏮', status: '在线拜年' },
       typingDelay: [400, 900],
       greetings: [
@@ -215,7 +214,6 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'snow', density: 40 },
-      music: "https://archive.org/download/BachOrganWorksByJamesKibbie/BWV0645.m4a",
       persona: { name: '我', avatar: '🎄', status: '在线' },
       typingDelay: [400, 900],
       greetings: [
@@ -275,7 +273,6 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'fireflies', density: 16 },
-      music: "https://dl.musopen.org/recordings/85484622-ca89-44b4-aa6e-7d1607abe1cf.mp3?filename=2688_prelude-to-the-afternoon-4f784f81-2089-4ac4-9378-8c84eee06168.mp3",
       persona: { name: '我', avatar: '🍉', status: '在线' },
       typingDelay: [400, 900],
       greetings: [
@@ -294,8 +291,6 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'leaves', density: 12 },
-      // music: 'https://library.classicalmusicarchive.org/music/HM%20Collection/Classicals.de%20-%20Satie%20-%20Gymnopedie%20No.%201.mp3',
-      music: 'https://library.classicalmusicarchive.org/music/HM%20Collection/Classicals.de%20-%20Satie%20-%20Gnossienne%20No.%201.mp3',
       persona: { name: '我', avatar: '🍂', status: '在线' },
       typingDelay: [500, 1000],
       greetings: [
@@ -314,7 +309,6 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'snow', density: 40 },
-      music: "https://library.classicalmusicarchive.org/music/HM%20Collection/Classicals.de%20-%20Debussy%20-%20Preludes%2C%20Livre%201%20-%206.%20Des%20pas%20sur%20la%20neige%20-%20L.117.mp3",
       persona: { name: '我', avatar: '❄️', status: '在线' },
       typingDelay: [500, 1000],
       greetings: [
@@ -333,7 +327,6 @@
         '--bubble-blur': '18px'
       },
       particles: { type: 'stars', density: 50 },
-      music: 'https://cdn.pixabay.com/audio/2025/09/27/audio_6813e09c43.mp3',
       persona: { name: '我', avatar: '🌙', status: '睡了，留言吧' },
       typingDelay: [600, 1100],
       greetings: [
@@ -487,8 +480,7 @@
     THEMES[id] = {
       label: d.status.split('·')[0], caption: d.status.split('·')[1], category: 'term',
       motif: TERM_SCENES[id][2],
-      season: d.season, // 供氛围音乐回退链使用（assets/audio/<季节>.mp3）
-      music: d.music || null, // 可直接指定远程音频 URL（如 Pixabay CDN 直链）
+      season: d.season,
       vars: vars,
       particles: d.particles || base.particles,
       persona: { name: '我', avatar: d.avatar, status: d.status },
@@ -497,6 +489,15 @@
       quickReplies: base.quickReplies
     };
   });
+
+  if (window.MusicLibrary) {
+    Object.keys(THEMES).forEach(function (id) {
+      var tracks = window.MusicLibrary.forTheme(id);
+      THEMES[id].music = tracks[0].src;
+      THEMES[id].musicTrack = tracks[0];
+      THEMES[id].musicFallbacks = tracks.slice(1);
+    });
+  }
 
   var DAY_MS = 86400000;
   var selectedTheme = null;
@@ -595,6 +596,8 @@
       dayOffset: dayOffset,
       season: t.season || null,
       music: t.music || null,
+      musicTrack: t.musicTrack || null,
+      musicFallbacks: t.musicFallbacks || [],
       vars: t.vars,
       wallpaper: t.wallpaper !== undefined ? t.wallpaper : 'assets/wallpapers/' + id + '.svg',
       particles: t.particles || { type: 'none' },

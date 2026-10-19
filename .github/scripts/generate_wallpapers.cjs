@@ -4,6 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '../..');
 const context = { window: {}, Intl };
+vm.runInNewContext(fs.readFileSync(path.join(root, 'js/music.js'), 'utf8'), context);
 vm.runInNewContext(fs.readFileSync(path.join(root, 'js/themes.js'), 'utf8'), context);
 const themes = context.window.ThemeEngine.THEMES;
 const output = path.join(root, 'assets/wallpapers');

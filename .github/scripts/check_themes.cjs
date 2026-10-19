@@ -23,6 +23,7 @@ function environment(calendar = Intl) {
     CustomEvent: class { constructor(type, data) { this.type = type; this.detail = data.detail; } },
     Image: class { constructor() { images.push(this); } }
   };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'js/music.js'), 'utf8'), context);
   vm.runInNewContext(source, context);
   return { engine: context.window.ThemeEngine, context, properties, images, document };
 }

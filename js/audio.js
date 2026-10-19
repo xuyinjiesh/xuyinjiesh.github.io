@@ -1,7 +1,6 @@
 /*
- * 氛围音乐：主题驱动，约定 assets/audio/<主题id>.mp3，
- * 回退链：时刻曲目（蓝调时刻 bluehour 等）→ 远程URL（主题 music 字段）→ 主题id
- *        → 季节id → default.mp3（404 自动降级）。
+ * 氛围音乐：目录与主题搭配见 js/music.js，本地录音在 assets/audio/music/。
+ * 回退链：时刻曲目 → 当前主题及备选 → 日常曲目 → 对应录音的远程源。
  * 时刻由调用方按太阳高度角喂入（见 js/chat.js 的蓝调时刻计算）。
  * 天气音效层：assets/audio/<mood>.mp3 或 .wav（rain / thunder / wind），低音量叠在音乐下，
  * 由调用方按“跟随天气”开关喂入 mood（见 js/chat.js）。
@@ -37,6 +36,8 @@
   var waitingForMusic = false;
   var waitingForSfx = false;
   var changingTrack = false;
+  var currentTrack = null;
+  var musicState = 'off';
   var pageHiding = false;
   var awayState = document.hidden;
   var mediaSessionReady = false;
@@ -73,7 +74,10 @@
   function tryPlay(elm) {
     var p = elm.play();
     if (p && p.catch) p.catch(function (e) {
-      if (e && e.name === 'NotAllowedError') waitGesture();
+      if (e && e.name === 'NotAllowedError') {
+        if (elm === el) publishMusic('waiting');
+        waitGesture();
+      }
     });
   }
 
@@ -143,18 +147,28 @@
 
   function setMediaMeta() {
     if (!('mediaSession' in navigator) || !window.MediaMetadata) return;
-    var title = trackLabel(el && el.src) || '氛围音乐';
-    var artist = (theme && theme.persona && theme.persona.name) || document.title || '';
+    var title = currentTrack ? currentTrack.title : trackLabel(el && el.src) || '氛围音乐';
+    var artist = currentTrack ? currentTrack.artist : (theme && theme.persona && theme.persona.name) || document.title || '';
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: title,
         artist: artist,
-        album: (theme && theme.id) || ''
+        album: (theme && (theme.label || theme.id)) || ''
       });
     } catch (e) {}
   }
 
+  function publishMusic(state) {
+    musicState = enabled ? state : 'off';
+    if (document.dispatchEvent && window.CustomEvent) {
+      document.dispatchEvent(new CustomEvent('musicchange', {
+        detail: { enabled: enabled, state: musicState, track: currentTrack }
+      }));
+    }
+  }
+
   function setPlaybackState(state) {
+    publishMusic(state);
     if (!('mediaSession' in navigator)) return;
     try { navigator.mediaSession.playbackState = state; } catch (e) {}
   }
@@ -200,10 +214,23 @@
     if (!enabled || changingTrack) return;
     candidateIdx++;
     if (candidateIdx < candidates.length) load(candidates[candidateIdx]);
+    else publishMusic('unavailable');
   }
 
   function buildCandidates(t) {
     var list = [];
+    var library = window.MusicLibrary;
+    if (library && t && t.musicTrack) {
+      var tracks = [];
+      var momentTrack = library.get(moment);
+      if (momentTrack) tracks.push(momentTrack);
+      else if (moment) list.push(/^https?:\/\//.test(moment) ? moment : 'assets/audio/' + moment + '.mp3');
+      tracks.push(t.musicTrack);
+      tracks = tracks.concat(t.musicFallbacks || [], library.forTheme('default'));
+      tracks.forEach(function (track) { if (list.indexOf(track.src) === -1) list.push(track.src); });
+      tracks.forEach(function (track) { if (track.download && list.indexOf(track.download) === -1) list.push(track.download); });
+      return list;
+    }
     if (moment) list.push(/^https?:\/\//.test(moment) ? moment : 'assets/audio/' + moment + '.mp3'); // 时刻曲目优先（蓝调时刻等），可配直链
     if (t && t.music) list.push(t.music); // 主题可直接指定远程 URL（如 Pixabay CDN 直链）
     if (t && t.id) list.push('assets/audio/' + t.id + '.mp3');
@@ -216,8 +243,10 @@
     stopFade('music');
     setLevel('music', 0);
     waitingForMusic = true;
+    currentTrack = window.MusicLibrary ? window.MusicLibrary.findSource(src) : null;
     el.src = src;
     setMediaMeta(); // 换曲后同步系统媒体信息
+    publishMusic('loading');
     if (isAway()) pausedForVisibility.music = true;
     else tryPlay(el);
   }
@@ -322,6 +351,7 @@
       if (!enabled) {
         pausedForVisibility.music = false;
         pausedForVisibility.sfx = false;
+        publishMusic('off');
         if (el) fadeTo('music', 0, function () { el.pause(); }, FADE_OUT_MS);
         if (sfx) fadeTo('sfx', 0, function () { sfx.pause(); }, FADE_OUT_MS);
         return;
@@ -333,8 +363,11 @@
       applyMood();
     },
     setTheme: function (t) {
+      var sameTrack = theme && t && buildCandidates(theme)[0] === buildCandidates(t)[0];
       theme = t;
       if (!enabled || !el) return;
+      // 相邻节气共用曲目时保留播放进度，也保留正在进行的切换。
+      if (sameTrack && !changingTrack) { setMediaMeta(); return; }
       changeTrack(); // 淡出换曲再淡入
     },
     setMoment: function (m) {
@@ -350,6 +383,7 @@
       mood = m || null;
       applyMood();
     },
-    isEnabled: function () { return enabled; }
+    isEnabled: function () { return enabled; },
+    getState: function () { return { enabled: enabled, state: musicState, track: currentTrack }; }
   };
 })();

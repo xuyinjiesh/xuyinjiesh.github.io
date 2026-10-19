@@ -6,6 +6,7 @@
 <title data-identity="title">{{NAME}} 的个人主页</title>
 <meta name="description" data-identity="description" content="{{NAME}} 的个人主页：一个住在聊天窗口里的主页。关于我、项目作品、最近动态与联系方式。">
 <!-- 主题必须在首绘前解析，防 FOUC：同步加载规则表并立刻应用 -->
+<script src="js/music.js"></script>
 <script src="js/themes.js"></script>
 <script>
   (function () {
@@ -89,6 +90,12 @@
 
     <div class="conversation-heading"><span></span><p>从一句「你好」开始</p><span></span></div>
 
+    <div id="now-playing" class="now-playing" hidden>
+      <span class="music-note" aria-hidden="true">♫</span>
+      <div class="music-details"><span id="music-state">正在播放</span><a id="music-title" target="_blank" rel="noopener"></a><span id="music-artist"></span></div>
+      <a id="music-license" class="music-license" target="_blank" rel="noopener"></a>
+    </div>
+
     <ol id="messages" class="messages" aria-live="polite"></ol>
 
     <div id="quick-replies" class="quick-replies" role="group" aria-label="快捷回复"></div>
@@ -97,7 +104,7 @@
       <input id="composer-input" type="text" placeholder="说点什么…" maxlength="200" aria-label="输入消息">
       <button type="submit" aria-label="发送">发送 <span aria-hidden="true">↗</span></button>
     </form>
-    <p class="composer-note">一扇小小的聊天窗，连接此刻的你和我。</p>
+    <p class="composer-note">一扇小小的聊天窗，连接此刻的你和我。<a href="assets/audio/CREDITS.md" target="_blank" rel="noopener">音乐来源</a></p>
   </main>
   </div>
   <footer class="site-footer"><span>四时有序 · 来去随心</span><span>MADE OF LITTLE MOMENTS <span aria-hidden="true">✳</span></span></footer>

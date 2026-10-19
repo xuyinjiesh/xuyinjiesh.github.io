@@ -114,17 +114,17 @@
         reply: ['抬头看看月亮吧，我们看的是同一颗。🌕']
       },
       {
-        // 音效 / 背景音乐素材署名（CC BY、CC BY-NC、CC BY-NC-ND 均要求保留署名）
-        // 权威出处是 assets/audio/CREDITS.md，这里只给摘要；新增曲目时两处一起改。
+        // 完整署名由 js/music.js 目录生成到 assets/audio/CREDITS.md。
         keys: ['音效', '音乐', '致谢', 'credit'],
         reply: [
           '雨声音效：<a href="https://freesound.org/people/InspectorJ/sounds/346642/" target="_blank" rel="noopener">"Rain on Windows, Interior, A.wav"</a> by InspectorJ (www.jshaw.co.uk)，来自 Freesound.org（CC BY 4.0）。',
-          '背景音乐按主题切换，都取自公开曲库：<br>' +
-            '· 春节 / 深夜 — Pixabay 曲库（Pixabay Content License）<br>' +
-            '· 夏日 — Debussy《牧神午后前奏曲》，Musopen（公共领域）<br>' +
-            '· 秋日 — Satie《Gnossienne No. 1》，录音 by Gregor Quendel / Classicals.de（CC BY-NC 4.0）<br>' +
-            '· 冬日 — Debussy《雪上足迹》，录音 by Gregor Quendel / Classicals.de（CC BY-NC 4.0）<br>' +
-            '· 圣诞 — Bach BWV 645，管风琴 by James Kibbie，Internet Archive（CC BY-NC-ND 3.0）',
+          '背景音乐随节气与节日变化：<br>' +
+            '· 萨蒂《Gymnopédie No. 1》— Kevin MacLeod 制作版（CC BY 4.0）<br>' +
+            '· 德彪西《月光》— Laurens Goedhart 录音（CC BY 3.0）<br>' +
+            '· 巴赫 BWV 846 前奏曲 — Kimiko Ishizaka 录音（CC0）<br>' +
+            '· Growing Up、Reverie、Snowfall 等 — Scott Buckley（CC BY 4.0）<br>' +
+            '· Water Lily、Midsummer Sky 等 — Kevin MacLeod（CC BY 4.0）',
+          '当前实际播放的曲名、作者、来源与许可，在聊天窗上方的音乐栏中可以查看。',
           '完整的来源、许可与署名格式见 <a href="' + CREDITS_URL + '" target="_blank" rel="noopener">assets/audio/CREDITS.md</a>。'
         ]
       },
