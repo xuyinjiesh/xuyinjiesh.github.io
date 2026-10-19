@@ -169,6 +169,11 @@ assert.equal(catalog.audios[0].plays, momentPlays, 'An active blue-hour track mu
 catalog.api.setMoment(null); catalog.advance(3000);
 assert.equal(catalog.api.getState().track.id, 'clair-de-lune');
 assert.equal(catalog.api.getState().track.license, 'CC BY 3.0');
+catalog.chooseTheme('spring-festival'); catalog.advance(3000);
+assert.equal(catalog.audios[0].src, 'https://cdn.pixabay.com/audio/2026/01/14/audio_3265c1aace.mp3');
+assert.equal(catalog.api.getState().track.id, 'spring-festival-original');
+catalog.audios[0].emit('error');
+assert.equal(catalog.api.getState().track.id, 'a-new-year');
 for (let i = 0; i < 20; i++) catalog.audios[0].emit('error');
 assert.equal(catalog.api.getState().state, 'unavailable');
 assert.equal(catalog.api.isEnabled(), true);

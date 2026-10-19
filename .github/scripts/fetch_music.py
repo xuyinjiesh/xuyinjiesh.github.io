@@ -69,7 +69,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
-    tracks = catalog()
+    tracks = {key: track for key, track in catalog().items() if not track.get('remoteOnly')}
     if args.check:
         records = json.loads(RECEIPTS.read_text())
         assert {item['id'] for item in records} == set(tracks), 'Incomplete music provenance'

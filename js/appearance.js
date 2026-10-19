@@ -104,28 +104,6 @@
   updateScene(window.__theme);
   setInterval(updateDate, 60000);
 
-  function updateMusic(state) {
-    var panel = document.getElementById('now-playing');
-    panel.hidden = !state.enabled || !state.track;
-    if (!state.track) return;
-    var track = state.track;
-    document.getElementById('music-state').textContent = {
-      loading: '正在载入', playing: '此刻正在听', paused: '已暂停 · 返回后继续',
-      waiting: '轻触页面，继续播放', unavailable: '曲目暂时无法播放'
-    }[state.state] || '时令音乐';
-    var title = document.getElementById('music-title');
-    title.textContent = track.title;
-    title.href = track.source;
-    title.title = track.composer ? track.composer + ' · ' + track.title : track.title;
-    document.getElementById('music-artist').textContent = track.artist;
-    var license = document.getElementById('music-license');
-    license.textContent = track.license;
-    license.href = track.licenseUrl;
-    license.setAttribute('aria-label', track.title + ' 的录音许可：' + track.license);
-  }
-  document.addEventListener('musicchange', function (event) { updateMusic(event.detail); });
-  if (window.AmbientAudio) updateMusic(window.AmbientAudio.getState());
-
   var app = document.getElementById('site-content');
   var loader = document.getElementById('page-loader');
   var released = false;

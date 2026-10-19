@@ -3,6 +3,14 @@
   'use strict';
   var BY = 'https://creativecommons.org/licenses/by/4.0/';
   var TRACKS = {
+    'spring-festival-original': {
+      title: '春节 · 原背景音乐', artist: 'Pixabay（作者未记录）',
+      license: 'Pixabay Content License', licenseUrl: 'https://pixabay.com/service/license-summary/',
+      source: 'https://cdn.pixabay.com/audio/2026/01/14/audio_3265c1aace.mp3',
+      download: 'https://cdn.pixabay.com/audio/2026/01/14/audio_3265c1aace.mp3',
+      src: 'https://cdn.pixabay.com/audio/2026/01/14/audio_3265c1aace.mp3',
+      remoteOnly: true
+    },
     'gymnopedie-1': {
       title: 'Gymnopédie No. 1', composer: 'Erik Satie', artist: 'Kevin MacLeod',
       license: 'CC BY 4.0', licenseUrl: BY,
@@ -87,7 +95,7 @@
     qiufen: ['gymnopedie-1'], hanlu: ['meditation-01'], shuangjiang: ['snowfall'],
     lidong: ['snowfall'], xiaoxue: ['snowfall'], daxue: ['snowfall'],
     dongzhi: ['jul'], xiaohan: ['meditation-01'], dahan: ['snowfall'],
-    'spring-festival': ['a-new-year', 'bach-prelude'],
+    'spring-festival': ['spring-festival-original', 'a-new-year', 'bach-prelude'],
     'little-new-year': ['a-new-year', 'bach-prelude'], 'new-year': ['a-new-year', 'bach-prelude'],
     'lantern-festival': ['clair-de-lune', 'eastern-thought'],
     'dragon-boat': ['midsummer-sky', 'eastern-thought'],
@@ -104,7 +112,7 @@
 
   Object.keys(TRACKS).forEach(function (id) {
     TRACKS[id].id = id;
-    TRACKS[id].src = 'assets/audio/music/' + id + '.mp3';
+    TRACKS[id].src = TRACKS[id].src || 'assets/audio/music/' + id + '.mp3';
     Object.freeze(TRACKS[id]);
   });
   Object.keys(THEMES).forEach(function (id) { Object.freeze(THEMES[id]); });
