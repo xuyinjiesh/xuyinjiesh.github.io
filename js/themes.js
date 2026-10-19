@@ -1,12 +1,12 @@
 /*
  * 主题引擎：按优先级的规则表解析“今天是什么主题”。
- * - 农历节日不自己算，维护 2025–2035 公历日期表。
+ * - 农历节日通过 Intl 中国历匹配；旧日期表作为兼容回退。
  * - 二十四节气用低精度太阳黄经公式离线生成 2025–2035 日期表（SOLAR_TERM_TABLE），
  *   已经过已知锚点校验；到期后需重新生成。
  * - span: [节前预热天数, 节后余韵天数]，相对节日当天的偏移。
  * - 判断使用访客本地时间。
  * - 可用 ?theme=<id> 强制预览某个主题。
- * - 壁纸约定：assets/wallpapers/<主题id>.jpg，探活成功才启用（见 apply）。
+ * - 壁纸约定：assets/wallpapers/<主题id>.svg，探活成功才启用（见 apply）。
  */
 (function () {
   'use strict';
@@ -64,11 +64,25 @@
   // 注意：生日主题不走日期规则（日期即隐私，源码公开可见），
   // 改为口令解锁——见 js/content.js 的 secret 配置。
   var RULES = [
-    { id: 'spring-festival', priority: 95,  festival: 'spring-festival', span: [-1, 1] },
-    { id: 'mid-autumn',      priority: 90,  festival: 'mid-autumn', span: [-1, 1] },
+    { id: 'spring-festival', priority: 95,  festival: 'spring-festival', lunar: [1, 1], span: [-1, 2] },
+    { id: 'mid-autumn',      priority: 90,  festival: 'mid-autumn', lunar: [8, 15], span: [-1, 1] },
+    { id: 'lantern-festival', priority: 89, lunar: [1, 15] },
+    { id: 'dragon-boat',     priority: 89, lunar: [5, 5] },
+    { id: 'qixi',            priority: 89, lunar: [7, 7] },
+    { id: 'double-ninth',    priority: 89, lunar: [9, 9] },
+    { id: 'laba',            priority: 89, lunar: [12, 8] },
+    { id: 'little-new-year', priority: 89, lunar: [12, 23] },
     { id: 'national-day',    priority: 88,  solar: '10-01', span: [0, 2] },
     { id: 'new-year',        priority: 85,  solar: '01-01', span: [-1, 1] },
     { id: 'xmas',            priority: 80,  solar: '12-25', span: [-1, 1] },
+    { id: 'valentine',       priority: 75, solar: '02-14' },
+    { id: 'womens-day',      priority: 75, solar: '03-08' },
+    { id: 'arbor-day',       priority: 75, solar: '03-12' },
+    { id: 'labor-day',       priority: 75, solar: '05-01', span: [0, 2] },
+    { id: 'childrens-day',   priority: 75, solar: '06-01' },
+    { id: 'teachers-day',    priority: 75, solar: '09-10' },
+    { id: 'halloween',       priority: 75, solar: '10-31' },
+    { id: 'thanksgiving',    priority: 75, weekday: [11, 4, 4] },
     { id: 'spring',          priority: 24,  months: [3, 4, 5] },
     { id: 'summer',          priority: 23,  months: [6, 7, 8] },
     { id: 'autumn',          priority: 22,  months: [9, 10, 11] },
@@ -335,21 +349,93 @@
     }
   };
 
-  // 二十四节气主题：以季节主题为基底生成，只覆盖强调色 / 人设 / 问候语。
+  // 节日和节气共享聊天能力，各自拥有配色和风景。
+  var FESTIVAL_DEFS = {
+    'lantern-festival': ['元宵', '一夜鱼龙舞', 'spring', '#662a32', '#211323', '#f8cf89', '🏮', 'lanterns', '花灯初上，月圆人安。元宵快乐，吃碗汤圆再聊。'],
+    'dragon-boat': ['端午', '粽香入夏来', 'summer', '#1d655c', '#0a292d', '#c9df9c', '🐉', 'boats', '端午安康。把祝福裹进粽叶，送你一整个夏天的清凉。'],
+    'qixi': ['七夕', '星河寄相思', 'summer', '#393565', '#11162e', '#d6b9ed', '✨', 'stars', '七夕快乐。今晚的银河很长，刚好够放下所有想念。'],
+    'double-ninth': ['重阳', '登高见远山', 'autumn', '#796044', '#2a2928', '#f1cb84', '🌼', 'chrysanthemums', '今日重阳。登高望远，也记得问候惦念的人。'],
+    'laba': ['腊八', '一碗人间暖', 'winter', '#664a40', '#29202a', '#e7c18f', '🥣', 'snow', '过了腊八就是年。喝一碗热粥，把冬日过暖。'],
+    'little-new-year': ['小年', '人间迎新岁', 'winter', '#743039', '#2d1725', '#f2bf7d', '🧧', 'lanterns', '小年快乐。扫去旧日的烦恼，留一扇门给新年的好事。'],
+    'valentine': ['情人节', '爱意慢慢生长', 'spring', '#754456', '#2e1e35', '#efbdcc', '💌', 'hearts', '情人节快乐。愿你有爱可说，也有人愿意听。'],
+    'womens-day': ['妇女节', '自在生长，自有光芒', 'spring', '#59526d', '#272236', '#ddc9f1', '💐', 'flowers', '愿每一位女性都能自由选择、尽情生长。节日快乐。'],
+    'arbor-day': ['植树节', '种下一点绿意', 'spring', '#326958', '#102e2c', '#b9dfaa', '🌳', 'trees', '种一棵树，也种下对未来的期待。植树节快乐。'],
+    'labor-day': ['劳动节', '把日常过成理想', 'summer', '#3c6572', '#172b3b', '#efce91', '☕', 'sun', '劳动节快乐。辛苦啦，今天让自己好好歇一歇。'],
+    'childrens-day': ['儿童节', '快乐不设年龄', 'summer', '#4b6e86', '#1d324e', '#f5d697', '🎈', 'balloons', '六一快乐。大朋友也可以保留一颗好奇的心。'],
+    'teachers-day': ['教师节', '一盏灯，照亮远方', 'autumn', '#566457', '#202e30', '#dfcc96', '📖', 'lights', '教师节快乐。谢谢每一位曾点亮我们世界的人。'],
+    'halloween': ['万圣夜', '今晚有一点奇妙', 'autumn', '#5c3d66', '#1a1830', '#f4b470', '🎃', 'pumpkins', '万圣夜快乐。不给糖，就留下来聊一会儿。'],
+    'thanksgiving': ['感恩节', '把感谢说给你听', 'autumn', '#865c43', '#30252b', '#efc58e', '🍁', 'leaves', '谢谢你来。那些平凡日子里的善意，都值得被记住。']
+  };
+  Object.keys(FESTIVAL_DEFS).forEach(function (id) {
+    var d = FESTIVAL_DEFS[id];
+    var base = THEMES[d[2]];
+    var vars = Object.assign({}, base.vars, {
+      '--bg-1': d[3], '--bg-2': d[4], '--accent': d[5],
+      '--bubble-user-bg': 'color-mix(in srgb, ' + d[5] + ' 24%, transparent)'
+    });
+    var particle = { lanterns: 'lanterns', stars: 'stars', snow: 'snow', leaves: 'leaves',
+      hearts: 'petals', flowers: 'petals', chrysanthemums: 'petals' }[d[7]] || 'fireflies';
+    THEMES[id] = {
+      label: d[0], caption: d[1], category: 'festival', motif: d[7], season: d[2], vars: vars,
+      particles: { type: particle, density: particle === 'snow' ? 30 : 16 },
+      persona: { name: '我', avatar: d[6], status: d[0] + ' · ' + d[1] },
+      greetings: [d[8]], quickReplies: DEFAULT_QUICK
+    };
+  });
+
+  var BASE_META = {
+    'default': ['日常', '留一点时间，随便聊聊', 'mountains'],
+    'spring': ['春日', '春风有信，花开有期', 'flowers'],
+    'summer': ['夏日', '绿荫深处，听风过夏', 'lotus'],
+    'autumn': ['秋日', '山河向晚，人间已秋', 'leaves'],
+    'winter': ['冬日', '围一炉暖意，等一场雪', 'snow'],
+    'night': ['深夜', '月亮在听，星星也在', 'stars'],
+    'spring-festival': ['春节', '灯火可亲，岁岁常安', 'lanterns'],
+    'mid-autumn': ['中秋', '一轮月色，万家团圆', 'moon'],
+    'national-day': ['国庆', '山河锦绣，万家灯火', 'fireworks'],
+    'new-year': ['元旦', '新岁序开，美好将至', 'fireworks'],
+    'xmas': ['圣诞', '把愿望，藏进冬夜的星光', 'christmas'],
+    'birthday': ['生日', '又一岁，仍有热爱', 'balloons']
+  };
+  Object.keys(BASE_META).forEach(function (id) {
+    var d = BASE_META[id];
+    Object.assign(THEMES[id], {
+      label: d[0], caption: d[1], motif: d[2],
+      category: ['spring-festival', 'mid-autumn', 'national-day', 'new-year', 'xmas', 'birthday'].indexOf(id) >= 0 ? 'festival' : 'daily'
+    });
+  });
+
+  // 每个节气拥有独立的天色与物候，而非只替换强调色。
+  var TERM_SCENES = {
+    lichun: ['#42675b', '#172f31', 'sprouts'], yushui: ['#426276', '#1a3041', 'rain'],
+    jingzhe: ['#53684b', '#1c3430', 'birds'], chunfen: ['#7b656f', '#343246', 'flowers'],
+    qingming: ['#52736d', '#1d3839', 'willow'], guyu: ['#3f7065', '#163a3b', 'rain'],
+    lixia: ['#386a62', '#143b3b', 'trees'], xiaoman: ['#6c7951', '#293d37', 'wheat'],
+    mangzhong: ['#8a7a49', '#3b4135', 'wheat'], xiazhi: ['#417e83', '#194355', 'sun'],
+    xiaoshu: ['#3e7473', '#173c47', 'lotus'], dashu: ['#4f6c82', '#1d354a', 'lotus'],
+    liqiu: ['#8a6c51', '#3d3431', 'leaves'], chushu: ['#7b775b', '#343e3b', 'birds'],
+    bailu: ['#688084', '#2a3e4a', 'reeds'], qiufen: ['#9a7556', '#443b38', 'leaves'],
+    hanlu: ['#696c71', '#2b3542', 'reeds'], shuangjiang: ['#7b6e65', '#343748', 'persimmons'],
+    lidong: ['#5a6b7b', '#283446', 'snow'], xiaoxue: ['#697e91', '#2b3d54', 'snow'],
+    daxue: ['#8295a7', '#344760', 'snow'], dongzhi: ['#6a6e85', '#2d304b', 'moon'],
+    xiaohan: ['#546d86', '#243750', 'snow'], dahan: ['#4c617c', '#202e46', 'plum']
+  };
+
+  // 二十四节气主题：以季节主题为基底生成。
   // particles 默认继承季节配置（春花瓣/夏萤火/秋落叶/冬雪），可用 particles 字段覆盖；
-  // 壁纸按 assets/wallpapers/<节气id>.jpg 约定自动生效。
+  // 壁纸按 assets/wallpapers/<节气id>.svg 约定自动生效。
   var TERM_DEFS = {
     'lichun':      { season: 'spring', accent: '#9fd98f', avatar: '🌱', status: '立春·万物始生',
       greetings: ['今日立春，东风解冻，万物始生。', '冬天算是熬出头了，新年新气象。'] },
-    'yushui':      { season: 'spring', accent: '#7fb8d4', avatar: '💧', status: '雨水·润物无声',
+    'yushui':      { season: 'spring', accent: '#7fb8d4', avatar: '💧', status: '雨水·润物无声', particles: { type: 'rain', density: 28 },
       greetings: ['今日雨水，春雨贵如油。', '天街小雨润如酥，出门记得带伞。'] },
     'jingzhe':     { season: 'spring', accent: '#c0d860', avatar: '⚡', status: '惊蛰·春雷乍动',
       greetings: ['今日惊蛰，春雷一响，百虫惊醒。', '惊蛰到，人也该跟着春天动起来了。'] },
     'chunfen':     { season: 'spring', accent: '#f0c6d0', avatar: '🌸', status: '春分·昼夜均分',
       greetings: ['今日春分，昼夜一样长。', '春分麦起身，一刻值千金。'] },
-    'qingming':    { season: 'spring', accent: '#9db89a', avatar: '🌿', status: '清明·慎终追远',
+    'qingming':    { season: 'spring', accent: '#9db89a', avatar: '🌿', status: '清明·慎终追远', particles: { type: 'rain', density: 20 },
       greetings: ['今日清明。慎终追远，也适合踏青。', '清明时节雨纷纷，出行注意安全。'] },
-    'guyu':        { season: 'spring', accent: '#8fc7a8', avatar: '🌾', status: '谷雨·雨生百谷',
+    'guyu':        { season: 'spring', accent: '#8fc7a8', avatar: '🌾', status: '谷雨·雨生百谷', particles: { type: 'rain', density: 28 },
       greetings: ['今日谷雨，雨生百谷。', '春天最后一个节气了，惜春。'] },
     'lixia':       { season: 'summer', accent: '#7ed491', avatar: '🍃', status: '立夏·万物繁茂',
       greetings: ['今日立夏，夏天正式开场。', '立夏尝新，夏天快乐。'] },
@@ -395,7 +481,12 @@
     var vars = {};
     for (var k in base.vars) vars[k] = base.vars[k];
     vars['--accent'] = d.accent;
+    vars['--bg-1'] = TERM_SCENES[id][0];
+    vars['--bg-2'] = TERM_SCENES[id][1];
+    vars['--bubble-user-bg'] = 'color-mix(in srgb, ' + d.accent + ' 24%, transparent)';
     THEMES[id] = {
+      label: d.status.split('·')[0], caption: d.status.split('·')[1], category: 'term',
+      motif: TERM_SCENES[id][2],
       season: d.season, // 供氛围音乐回退链使用（assets/audio/<季节>.mp3）
       music: d.music || null, // 可直接指定远程音频 URL（如 Pixabay CDN 直链）
       vars: vars,
@@ -408,6 +499,13 @@
   });
 
   var DAY_MS = 86400000;
+  var selectedTheme = null;
+  var wallpaperRequest = 0;
+  var lunarCalendar = null;
+  try {
+    var formatter = new Intl.DateTimeFormat('en-u-ca-chinese', { month: 'numeric', day: 'numeric' });
+    if (formatter.resolvedOptions().calendar === 'chinese') lunarCalendar = formatter;
+  } catch (e) {}
 
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -436,6 +534,24 @@
     if (rule.hours) {
       return rule.hours.indexOf(date.getHours()) !== -1 ? { dayOffset: 0 } : null;
     }
+    if (rule.weekday) {
+      var w = rule.weekday;
+      return date.getMonth() + 1 === w[0] && date.getDay() === w[1] &&
+        Math.ceil(date.getDate() / 7) === w[2] ? { dayOffset: 0 } : null;
+    }
+    if (rule.lunar && lunarCalendar) {
+      for (var offset = span[0]; offset <= span[1]; offset++) {
+        var candidate = new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset, 12);
+        var parts = lunarCalendar.formatToParts(candidate);
+        var month = parts.filter(function (p) { return p.type === 'month'; })[0];
+        var day = parts.filter(function (p) { return p.type === 'day'; })[0];
+        // 闰月的 month 带 bis 后缀，不能作为常规节日命中。
+        if (month && day && month.value === String(rule.lunar[0]) && day.value === String(rule.lunar[1])) {
+          return { dayOffset: offset };
+        }
+      }
+      return null;
+    }
     var mmdd = null;
     if (rule.solar) mmdd = rule.solar;
     if (rule.festival) {
@@ -456,6 +572,7 @@
     // ?theme=xxx 预览强制指定
     var forced = new URLSearchParams(location.search).get('theme');
     if (forced && THEMES[forced]) return build(forced, 0);
+    if (selectedTheme && THEMES[selectedTheme]) return build(selectedTheme, 0);
 
     var best = null;
     for (var i = 0; i < RULES.length; i++) {
@@ -471,12 +588,15 @@
     var t = THEMES[id] || THEMES['default'];
     return {
       id: id,
+      label: t.label,
+      caption: t.caption,
+      category: t.category,
+      motif: t.motif,
       dayOffset: dayOffset,
       season: t.season || null,
       music: t.music || null,
       vars: t.vars,
-      // 壁纸约定：assets/wallpapers/<主题id>.jpg，主题可用 wallpaper 字段另行指定
-      wallpaper: t.wallpaper !== undefined ? t.wallpaper : 'assets/wallpapers/' + id + '.jpg',
+      wallpaper: t.wallpaper !== undefined ? t.wallpaper : 'assets/wallpapers/' + id + '.svg',
       particles: t.particles || { type: 'none' },
       persona: t.persona,
       typingDelay: t.typingDelay || [400, 900],
@@ -491,14 +611,21 @@
   }
 
   // 先用 Image 探活：壁纸存在才切换，缺失时保持纯渐变，避免 404 后界面变平
-  function loadWallpaper(root, path) {
-    if (!path) return;
-    var img = new Image();
-    img.onload = function () {
-      root.style.setProperty('--wallpaper', 'url("' + path + '")');
-      root.dataset.wallpaper = '';
-    };
-    img.src = path;
+  function loadWallpaper(root, path, request) {
+    return new Promise(function (done) {
+      if (!path) { done(); return; }
+      var img = new Image();
+      img.onload = function () {
+        // 快速切换时，过期请求不能覆盖当前风景。
+        if (request === wallpaperRequest) {
+          root.style.setProperty('--wallpaper', 'url("' + new URL(path, document.baseURI).href + '")');
+          root.dataset.wallpaper = '';
+        }
+        done();
+      };
+      img.onerror = function () { done(); };
+      img.src = path;
+    });
   }
 
   function apply(theme) {
@@ -507,9 +634,19 @@
     for (var k in theme.vars) root.style.setProperty(k, theme.vars[k]);
     root.style.removeProperty('--wallpaper');
     delete root.dataset.wallpaper;
-    loadWallpaper(root, theme.wallpaper);
+    window.__themeReady = loadWallpaper(root, theme.wallpaper, ++wallpaperRequest);
     window.__theme = theme;
+    document.dispatchEvent(new CustomEvent('themechange', { detail: theme }));
+    return window.__themeReady;
   }
 
-  window.ThemeEngine = { resolve: resolve, apply: apply, THEMES: THEMES, get: get };
+  function select(id) {
+    selectedTheme = id && THEMES[id] && id !== 'birthday' ? id : null;
+    var url = new URL(location.href);
+    url.searchParams.delete('theme');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    return resolve(new Date());
+  }
+
+  window.ThemeEngine = { resolve: resolve, apply: apply, THEMES: THEMES, get: get, select: select };
 })();

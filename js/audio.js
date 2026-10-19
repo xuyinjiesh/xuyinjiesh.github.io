@@ -7,8 +7,9 @@
  * 由调用方按“跟随天气”开关喂入 mood（见 js/chat.js）。
  * 烟花音效：assets/audio/fireworks-<n>.wav（程序合成），由粒子爆发事件触发，归总开关管。
  * 浏览器禁止手势前播放有声内容，play() 被拒时自动等待首次手势。
- * 切走标签页/切到别的 App：不暂停，只把音乐压低到 DUCK_VOLUME，回来再淡回原音量；
- * 同时用 MediaSession 把曲目信息交给系统，锁屏与系统媒体控件可持续控制。
+ * 切走标签页/切到别的 App：渐出至静音后暂停，回来从原进度渐入。
+ * 页面卸载时立即收尾；前进/后退缓存恢复后可继续渐入。
+ * 同时用 MediaSession 把曲目信息交给系统媒体控件。
  * 是否启用由调用方按站内开关决定（见 js/chat.js）。
  */
 (function () {
@@ -17,8 +18,8 @@
   var VOLUME = 0.3;
   var SFX_VOLUME = 0.15;
   var FADE_MS = 1500;
-  var DUCK_VOLUME = 0.05; // 页面不可见时的音乐音量（不暂停，切回来无缝恢复）
-  var DUCK_FADE_MS = 600;
+  var FADE_OUT_MS = 650;
+  var FADE_STEP_MS = 25;
 
   var el = null;        // 音乐层
   var sfx = null;       // 天气音效层
@@ -29,21 +30,44 @@
   var moodSrc = null;
   var candidates = [];
   var candidateIdx = 0;
-  var fades = { music: null, sfx: null };
+  // 曲目切换和页面显隐分别控制音量，切标签页不会打断换曲的回调。
+  var fades = { music: null, sfx: null, presence: null };
+  var levels = { music: 0, sfx: 0, presence: document.hidden ? 0 : 1 };
+  var pausedForVisibility = { music: false, sfx: false };
+  var waitingForMusic = false;
+  var waitingForSfx = false;
+  var changingTrack = false;
+  var pageHiding = false;
+  var awayState = document.hidden;
   var mediaSessionReady = false;
   var waitingGesture = false;
 
-  function fadeTo(key, elm, target, done, ms) {
-    if (fades[key]) cancelAnimationFrame(fades[key]);
-    var dur = ms || FADE_MS;
-    var from = elm.volume, t0 = performance.now();
-    function step(now) {
-      var k = Math.min((now - t0) / dur, 1);
-      elm.volume = from + (target - from) * k;
-      if (k < 1) fades[key] = requestAnimationFrame(step);
+  function isAway() { return pageHiding || document.hidden; }
+
+  function stopFade(key) {
+    if (fades[key] !== null) clearTimeout(fades[key]);
+    fades[key] = null;
+  }
+
+  function setLevel(key, value) {
+    levels[key] = value;
+    if (el) el.volume = Math.max(0, Math.min(1, levels.music * levels.presence));
+    if (sfx) sfx.volume = Math.max(0, Math.min(1, levels.sfx * levels.presence));
+  }
+
+  function fadeTo(key, target, done, ms) {
+    stopFade(key);
+    var dur = ms === undefined ? FADE_MS : ms;
+    var from = levels[key], t0 = performance.now();
+    function step() {
+      var k = dur > 0 ? Math.min((performance.now() - t0) / dur, 1) : 1;
+      var eased = k * k * (3 - 2 * k);
+      setLevel(key, from + (target - from) * eased);
+      // 后台标签页会停止 rAF；音频渐变使用计时器，并按实际经过时间收尾。
+      if (k < 1) fades[key] = setTimeout(step, FADE_STEP_MS);
       else { fades[key] = null; if (done) done(); }
     }
-    fades[key] = requestAnimationFrame(step);
+    step();
   }
 
   function tryPlay(elm) {
@@ -60,7 +84,7 @@
       document.removeEventListener('pointerdown', once);
       document.removeEventListener('keydown', once);
       waitingGesture = false;
-      if (!enabled || document.hidden) return;
+      if (!enabled || isAway()) return;
       if (el && el.paused && el.src) tryPlay(el);
       if (sfx && sfx.paused && moodSrc) tryPlay(sfx);
     };
@@ -68,19 +92,46 @@
     document.addEventListener('keydown', once);
   }
 
-  // 页面不可见：不暂停，只把音乐压低（sfx 音量本就极低，不必跟着压），切回来淡回原音量。
-  // 这样切标签页/切到别的 App 时音乐仍在，配合 MediaSession 手机锁屏也能继续。
-  function onVisibility() {
-    if (!enabled || !el) return;
-    if (document.hidden) {
-      // 只有总开关开着才压：关着的时候 el 可能只是被淡到 0，压上来会自己出声
-      if (enabled && !el.paused) fadeTo('music', el, DUCK_VOLUME, null, DUCK_FADE_MS);
-    } else {
-      if (!enabled) return;
-      if (!el.paused) fadeTo('music', el, VOLUME);
-      if (sfx && sfx.paused && moodSrc) tryPlay(sfx); // 手势阻塞会自己挂一次监听，这里不必再判
-    }
+  function pauseForVisibility() {
+    if (el && !el.paused) { pausedForVisibility.music = enabled; el.pause(); }
+    if (sfx && !sfx.paused) { pausedForVisibility.sfx = enabled && !!mood; sfx.pause(); }
   }
+
+  function onVisibility() {
+    var away = isAway();
+    if (away === awayState) return;
+    awayState = away;
+    if (!enabled) return;
+    if (away) {
+      fadeTo('presence', 0, function () {
+        if (enabled && isAway()) pauseForVisibility();
+      }, FADE_OUT_MS);
+      return;
+    }
+    if (pausedForVisibility.music && el && el.src) {
+      pausedForVisibility.music = false;
+      tryPlay(el);
+    }
+    if (pausedForVisibility.sfx && sfx && moodSrc) {
+      pausedForVisibility.sfx = false;
+      tryPlay(sfx);
+    }
+    fadeTo('presence', 1);
+  }
+
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', function () {
+    pageHiding = true;
+    awayState = true;
+    // 导航/刷新可能立即冻结或销毁页面，不能等待异步渐变结束。
+    stopFade('presence');
+    setLevel('presence', 0);
+    pauseForVisibility();
+  });
+  window.addEventListener('pageshow', function () {
+    pageHiding = false;
+    onVisibility();
+  });
 
   // ---- 系统媒体会话：让锁屏 / 系统媒体面板认识这个站 ----
   function trackLabel(src) {
@@ -128,14 +179,25 @@
     el.playsInline = true;
     el.volume = 0;
     el.addEventListener('error', onError);
-    el.addEventListener('playing', function () { setPlaybackState('playing'); });
+    el.addEventListener('playing', function () {
+      if (!enabled) { el.pause(); return; }
+      if (isAway() && levels.presence === 0) {
+        pausedForVisibility.music = true;
+        el.pause();
+        return;
+      }
+      if (waitingForMusic) {
+        waitingForMusic = false;
+        fadeTo('music', VOLUME);
+      }
+      setPlaybackState('playing');
+    });
     el.addEventListener('pause', function () { setPlaybackState('paused'); });
-    document.addEventListener('visibilitychange', onVisibility);
     ensureMediaSession();
   }
 
   function onError() {
-    if (!enabled) return;
+    if (!enabled || changingTrack) return;
     candidateIdx++;
     if (candidateIdx < candidates.length) load(candidates[candidateIdx]);
   }
@@ -151,16 +213,26 @@
   }
 
   function load(src) {
+    stopFade('music');
+    setLevel('music', 0);
+    waitingForMusic = true;
     el.src = src;
     setMediaMeta(); // 换曲后同步系统媒体信息
-    tryPlay(el);
+    if (isAway()) pausedForVisibility.music = true;
+    else tryPlay(el);
   }
 
   function startPlayback() {
+    changingTrack = false;
     candidates = buildCandidates(theme);
     candidateIdx = 0;
     load(candidates[0]);
-    fadeTo('music', el, document.hidden ? DUCK_VOLUME : VOLUME);
+  }
+
+  function changeTrack() {
+    waitingForMusic = false;
+    changingTrack = true;
+    fadeTo('music', 0, startPlayback);
   }
 
   // ---- 天气音效层 ----
@@ -172,6 +244,18 @@
     sfx = new Audio();
     sfx.loop = true;
     sfx.volume = 0;
+    sfx.addEventListener('playing', function () {
+      if (!enabled || !mood || !moodSrc) { sfx.pause(); return; }
+      if (isAway() && levels.presence === 0) {
+        pausedForVisibility.sfx = true;
+        sfx.pause();
+        return;
+      }
+      if (waitingForSfx) {
+        waitingForSfx = false;
+        fadeTo('sfx', SFX_VOLUME);
+      }
+    });
     sfx.addEventListener('error', function () {
       if (!enabled || !mood) return;
       sfxIdx++;
@@ -181,25 +265,38 @@
   }
 
   function loadSfx(src) {
+    stopFade('sfx');
+    setLevel('sfx', 0);
+    waitingForSfx = true;
     moodSrc = src;
     sfx.src = src;
-    tryPlay(sfx);
+    if (isAway()) pausedForVisibility.sfx = true;
+    else tryPlay(sfx);
   }
 
   function applyMood() {
     if (!enabled) return; // 总开关关闭时只记 mood，保持安静
     if (!mood) {
-      if (sfx && moodSrc) fadeTo('sfx', sfx, 0, function () { sfx.pause(); moodSrc = null; });
+      stopFade('sfx');
+      waitingForSfx = false;
+      pausedForVisibility.sfx = false;
+      if (sfx && moodSrc) fadeTo('sfx', 0, function () { sfx.pause(); moodSrc = null; });
       return;
     }
     ensureSfx();
     var next = SFX_EXTS.map(function (e) { return 'assets/audio/' + mood + '.' + e; });
-    if (sfxCandidates[0] === next[0] && moodSrc) return; // 同 mood 已在播
+    if (sfxCandidates[0] === next[0] && moodSrc) {
+      stopFade('sfx');
+      waitingForSfx = true;
+      if (isAway()) pausedForVisibility.sfx = true;
+      else if (sfx.paused) tryPlay(sfx);
+      else { waitingForSfx = false; fadeTo('sfx', SFX_VOLUME); }
+      return;
+    }
     sfxCandidates = next;
     sfxIdx = 0;
-    fadeTo('sfx', sfx, 0, function () {
+    fadeTo('sfx', 0, function () {
       loadSfx(sfxCandidates[0]);
-      fadeTo('sfx', sfx, SFX_VOLUME);
     });
   }
 
@@ -220,12 +317,17 @@
 
   window.AmbientAudio = {
     setEnabled: function (on) {
+      if (enabled === !!on) return;
       enabled = !!on;
       if (!enabled) {
-        if (el) fadeTo('music', el, 0, function () { el.pause(); }, DUCK_FADE_MS);
-        if (sfx) fadeTo('sfx', sfx, 0, function () { sfx.pause(); }, DUCK_FADE_MS);
+        pausedForVisibility.music = false;
+        pausedForVisibility.sfx = false;
+        if (el) fadeTo('music', 0, function () { el.pause(); }, FADE_OUT_MS);
+        if (sfx) fadeTo('sfx', 0, function () { sfx.pause(); }, FADE_OUT_MS);
         return;
       }
+      stopFade('presence');
+      setLevel('presence', isAway() ? 0 : 1);
       ensureEl();
       startPlayback();
       applyMood();
@@ -233,7 +335,7 @@
     setTheme: function (t) {
       theme = t;
       if (!enabled || !el) return;
-      fadeTo('music', el, 0, function () { startPlayback(); }); // 淡出换曲再淡入
+      changeTrack(); // 淡出换曲再淡入
     },
     setMoment: function (m) {
       m = m || null;
@@ -242,7 +344,7 @@
       if (!enabled || !el) return;
       // 链首候选不变就不换曲（例如时刻曲目缺失、已在播回退曲目时离开蓝调时刻）
       if (candidates[candidateIdx] === buildCandidates(theme)[0]) return;
-      fadeTo('music', el, 0, function () { startPlayback(); });
+      changeTrack();
     },
     setMood: function (m) {
       mood = m || null;

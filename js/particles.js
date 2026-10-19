@@ -1,5 +1,5 @@
 /*
- * 背景粒子：雪 / 花瓣 / 灯笼 / 落叶 / 星星 / 萤火虫 / 烟花。
+ * 背景粒子：雨 / 雪 / 花瓣 / 灯笼 / 落叶 / 星星 / 萤火虫 / 烟花。
  * 密度刻意压得很低，只负责“呼吸感”。
  * 是否启动由调用方按站内动效开关决定（见 js/chat.js），本文件不再自查系统偏好。
  */
@@ -47,6 +47,9 @@
       function spawn(init) {
         var p = { x: rnd(0, W), y: init ? rnd(0, H) : -20, t: rnd(0, Math.PI * 2) };
         switch (type) {
+          case 'rain':
+            p.r = rnd(9, 17); p.vy = rnd(3, 5); p.vx = -0.7;
+            break;
           case 'snow':
             p.r = rnd(1, 3); p.vy = rnd(0.3, 1); p.vx = rnd(-0.3, 0.3);
             break;
@@ -125,6 +128,14 @@
           p.t += 0.016;
 
           switch (type) {
+            case 'rain':
+              p.y += p.vy; p.x += p.vx;
+              ctx.globalAlpha = 0.25;
+              ctx.strokeStyle = accentRGB;
+              ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - 2, p.y + p.r); ctx.stroke();
+              if (p.y > H + 20) ps[i] = spawn(false);
+              break;
             case 'snow':
               p.y += p.vy; p.x += p.vx + Math.sin(p.t) * 0.3;
               ctx.globalAlpha = 0.7;

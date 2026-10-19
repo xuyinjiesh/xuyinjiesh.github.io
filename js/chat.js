@@ -182,7 +182,7 @@
 
   // ---- 外观 ----
   function applyPersona() {
-    document.getElementById('avatar').textContent = theme.persona.avatar;
+    document.getElementById('avatar').textContent = theme.label ? theme.label.charAt(0) : theme.persona.avatar;
     document.getElementById('peer-name').textContent = theme.persona.name;
     document.getElementById('peer-status').textContent = theme.persona.status;
     document.title = SITE.profile.name + ' · 主页';
@@ -758,6 +758,10 @@
     if (window.AmbientAudio) window.AmbientAudio.setTheme(theme);
     return true;
   }
+
+  document.addEventListener('theme-request', function (event) {
+    switchTheme(ThemeEngine.select(event.detail));
+  });
 
   // 跨过午夜（或跨过按小时命中的规则）时重新解析主题，只在真的变了的时候换装。
   // 用定期检查而不是一次性定时器，避免标签页休眠/系统挂起把定时器拖偏。

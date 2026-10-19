@@ -9,6 +9,14 @@
 <script src="js/themes.js"></script>
 <script>
   (function () {
+    document.documentElement.dataset.loading = '';
+    window.__loadingStarted = performance.now();
+    // 即使后续脚本或资源失败，起始页也不会阻挡访问。
+    window.__loadingFallback = setTimeout(function () {
+      delete document.documentElement.dataset.loading;
+      var app = document.getElementById('site-content');
+      if (app) app.inert = false;
+    }, 4000);
     var t = ThemeEngine.resolve(new Date());
     ThemeEngine.apply(t);
     // 站内动效开关在首绘前应用，防动画闪烁；未设置则跟随系统
@@ -28,6 +36,42 @@
   <canvas id="particles" aria-hidden="true"></canvas>
   <div class="vignette" aria-hidden="true"></div>
 
+  <section id="page-loader" class="page-loader" aria-label="欢迎来到我的主页">
+    <div class="loader-orbit" aria-hidden="true">
+      <svg viewBox="0 0 160 160"><circle class="orbit-track" cx="80" cy="80" r="66"/><circle class="orbit-ticks" cx="80" cy="80" r="66"/><circle class="orbit-path" cx="80" cy="80" r="51"/><circle class="orbit-sun" cx="80" cy="80" r="5"/></svg>
+      <span>时</span>
+    </div>
+    <p class="eyebrow">A MOMENT, A SEASON</p>
+    <h1>等一帧风景</h1>
+    <p id="loader-caption" class="loader-caption">四时有序，相逢有时。</p>
+    <div class="loader-progress" aria-hidden="true"><i></i></div>
+    <p id="loader-status" class="loader-status" role="status">正在准备今日风景</p>
+    <button id="skip-loader" class="text-button" type="button">直接进入 <span aria-hidden="true">↗</span></button>
+  </section>
+
+  <div id="site-content" class="site-content">
+  <header class="site-topbar">
+    <a class="site-brand" href="./" aria-label="返回主页"><span class="brand-mark" aria-hidden="true">时</span><span data-identity="name">{{NAME}}</span><span class="brand-divider">/</span><span class="brand-note">线上小屋</span></a>
+    <div class="site-nav">
+      <button id="theme-toggle" class="scene-toggle" type="button" aria-haspopup="dialog" aria-controls="theme-dialog"><span class="scene-dot" aria-hidden="true"></span><span id="current-theme-label">今日风景</span><span class="scene-toggle-hint">换个风景</span><span aria-hidden="true">↗</span></button>
+      <a class="github-link" data-identity="github" href="https://github.com/{{GITHUB}}" target="_blank" rel="noopener" aria-label="访问我的 GitHub">GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="welcome-panel" aria-label="欢迎">
+      <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span> A LITTLE SPACE FOR YOU</p>
+      <h1>此刻，<br>见字如面<span class="title-period">。</span></h1>
+      <p class="welcome-copy">我是 <span data-identity="name">{{NAME}}</span>，欢迎来我的线上小屋。<br>聊聊作品、分享近况，或者只是打个招呼。</p>
+      <div class="season-note">
+        <div class="season-note-top"><span id="scene-category">四季手记</span><span id="scene-index">AUTUMN</span></div>
+        <div class="season-note-title"><span id="scene-name">秋日</span><span class="season-note-rule" aria-hidden="true"></span><span id="scene-icon" aria-hidden="true">🍂</span></div>
+        <p id="scene-caption">山河向晚，人间已秋</p>
+        <time id="scene-date"></time>
+      </div>
+      <p class="welcome-footnote"><span aria-hidden="true">✳</span> 每个时节，都有自己的风景。</p>
+    </aside>
+
   <main class="chat-window" aria-label="与站主的对话">
     <header class="chat-header">
       <div class="avatar" id="avatar" aria-hidden="true">👋</div>
@@ -35,11 +79,15 @@
         <span class="peer-name" id="peer-name">我</span>
         <span class="peer-status" id="peer-status">在线</span>
       </div>
+      <div class="header-controls" role="group" aria-label="聊天设置">
       <button id="weather-toggle" class="ghost-btn" type="button" aria-pressed="false" title="跟随当地天气与蓝调时刻（需定位授权）">天气</button>
       <button id="music-toggle" class="ghost-btn" type="button" aria-pressed="false" title="切换氛围音乐">音乐</button>
       <button id="motion-toggle" class="ghost-btn" type="button" aria-pressed="true" title="切换页面动效（优先级高于系统设置）">动效</button>
       <button id="clear-chat" class="ghost-btn" type="button" title="清空对话">清空对话</button>
+      </div>
     </header>
+
+    <div class="conversation-heading"><span></span><p>从一句「你好」开始</p><span></span></div>
 
     <ol id="messages" class="messages" aria-live="polite"></ol>
 
@@ -47,9 +95,26 @@
 
     <form id="composer" class="composer" autocomplete="off">
       <input id="composer-input" type="text" placeholder="说点什么…" maxlength="200" aria-label="输入消息">
-      <button type="submit" aria-label="发送">发送</button>
+      <button type="submit" aria-label="发送">发送 <span aria-hidden="true">↗</span></button>
     </form>
+    <p class="composer-note">一扇小小的聊天窗，连接此刻的你和我。</p>
   </main>
+  </div>
+  <footer class="site-footer"><span>四时有序 · 来去随心</span><span>MADE OF LITTLE MOMENTS <span aria-hidden="true">✳</span></span></footer>
+  </div>
+
+  <dialog id="theme-dialog" class="theme-dialog" aria-labelledby="theme-dialog-title">
+    <div class="theme-dialog-header"><div><p class="eyebrow">THE SEASON COLLECTION</p><h2 id="theme-dialog-title">换一帧风景</h2></div><button id="close-themes" class="close-button" type="button" aria-label="关闭风景面板">×</button></div>
+    <p class="theme-dialog-copy">让这里，成为你此刻喜欢的样子。</p>
+    <button id="auto-theme" class="auto-theme" type="button"><span aria-hidden="true">◷</span><span><strong>跟随时令</strong><small>随日期，遇见今日的节气与节日</small></span><span aria-hidden="true">↗</span></button>
+    <div class="theme-tabs" role="tablist" aria-label="风景分类">
+      <button type="button" role="tab" id="tab-term" aria-controls="theme-grid" aria-selected="true" data-category="term">二十四节气 <span>24</span></button>
+      <button type="button" role="tab" id="tab-festival" aria-controls="theme-grid" aria-selected="false" tabindex="-1" data-category="festival">节日 <span>19</span></button>
+      <button type="button" role="tab" id="tab-daily" aria-controls="theme-grid" aria-selected="false" tabindex="-1" data-category="daily">日常 <span>6</span></button>
+    </div>
+    <div id="theme-grid" class="theme-grid" role="tabpanel" aria-labelledby="tab-term" tabindex="0"></div>
+    <p class="theme-dialog-foot">轻触选择，即刻抵达。<span id="theme-selection-status" role="status"></span></p>
+  </dialog>
 
   <!-- 无障碍 / SEO：核心内容以语义化 HTML 直出，视觉上隐藏。
        身份信息不写死在这里：带 data-identity 标记的节点由 js/identity.js 在运行时填充，
@@ -89,6 +154,7 @@
   <script src="js/spire.js"></script>
   <script src="js/note.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/appearance.js"></script>
   <script>window.applyIdentity();</script>
 </body>
 </html>
