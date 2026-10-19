@@ -1,10 +1,11 @@
-/* 时令手记、风景收藏与起始页。全部使用本地资源。 */
+/* 时令手记、风景收藏与起始页；Bing 壁纸按需预览。 */
 (function () {
   'use strict';
 
   var root = document.documentElement;
   var dialog = document.getElementById('theme-dialog');
   var grid = document.getElementById('theme-grid');
+  var bingPanel = document.getElementById('bing-panel');
   var toggle = document.getElementById('theme-toggle');
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.theme-tabs [role="tab"]'));
   var catalog = Object.keys(ThemeEngine.THEMES).filter(function (id) { return id !== 'birthday'; });
@@ -21,7 +22,9 @@
 
   function updateScene(theme) {
     if (!theme) return;
-    document.getElementById('current-theme-label').textContent = theme.label;
+    var bingActive = window.BingWallpaper && window.BingWallpaper.isActive();
+    var label = bingActive ? 'Bing 壁纸' : theme.label;
+    document.getElementById('current-theme-label').textContent = label;
     document.getElementById('scene-name').textContent = theme.label;
     document.getElementById('scene-caption').textContent = theme.caption;
     document.getElementById('scene-icon').textContent = '✳';
@@ -32,14 +35,15 @@
       ? String(terms.indexOf(theme.id) + 1).padStart(2, '0') + ' / 24'
       : theme.category === 'festival' ? 'A DAY TO REMEMBER' : theme.id === 'default' ? 'EVERYDAY' : theme.id.toUpperCase();
     document.getElementById('loader-caption').textContent = theme.label + ' · ' + theme.caption;
-    toggle.setAttribute('aria-label', '当前风景：' + theme.label + '，打开风景收藏');
+    toggle.setAttribute('aria-label', '当前风景：' + label + '，打开风景收藏');
     Array.prototype.forEach.call(grid.querySelectorAll('button'), function (button) {
-      button.setAttribute('aria-pressed', String(button.dataset.theme === theme.id));
+      button.setAttribute('aria-pressed', String(!bingActive && button.dataset.theme === theme.id));
     });
     updateDate();
   }
 
   function requestTheme(id) {
+    if (window.BingWallpaper) window.BingWallpaper.reset();
     document.dispatchEvent(new CustomEvent('theme-request', { detail: id }));
     document.getElementById('theme-selection-status').textContent = id ? '已切换 · ' + window.__theme.label : '已跟随时令';
   }
@@ -51,6 +55,14 @@
       tab.setAttribute('aria-selected', String(selected));
       tab.tabIndex = selected ? 0 : -1;
     });
+    var isBing = category === 'bing';
+    grid.hidden = isBing;
+    bingPanel.hidden = !isBing;
+    document.getElementById('theme-panel-hint').textContent = isBing ? '先预览，喜欢再应用。' : '轻触选择，即刻抵达。';
+    if (isBing) {
+      if (window.BingWallpaper) window.BingWallpaper.open();
+      return;
+    }
     grid.setAttribute('aria-labelledby', 'tab-' + category);
     grid.replaceChildren();
     grid.scrollTop = 0;
@@ -62,7 +74,7 @@
       tile.dataset.theme = id;
       tile.style.backgroundColor = theme.vars['--bg-1'];
       tile.style.setProperty('--swatch', 'url("' + new URL(theme.wallpaper, document.baseURI).href + '")');
-      tile.setAttribute('aria-pressed', String(window.__theme.id === id));
+      tile.setAttribute('aria-pressed', String(window.__theme.id === id && !(window.BingWallpaper && window.BingWallpaper.isActive())));
       tile.setAttribute('aria-label', theme.label + '，' + theme.caption);
       var name = document.createElement('strong');
       name.textContent = theme.label;
@@ -101,6 +113,7 @@
     });
   });
   document.addEventListener('themechange', function (event) { updateScene(event.detail); });
+  document.addEventListener('wallpaperchange', function () { updateScene(window.__theme); });
   updateScene(window.__theme);
   setInterval(updateDate, 60000);
 
@@ -124,7 +137,7 @@
       (root.dataset.motion !== 'full' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var minimum = Math.max(0, (reduced ? 0 : 1100) - (performance.now() - window.__loadingStarted));
     Promise.race([
-      Promise.all([window.__themeReady || Promise.resolve(), new Promise(function (done) { setTimeout(done, minimum); })]),
+      Promise.all([window.__themeReady || Promise.resolve(), window.__bingWallpaperReady || Promise.resolve(), new Promise(function (done) { setTimeout(done, minimum); })]),
       new Promise(function (done) { setTimeout(done, 2800); })
     ]).then(function () {
       document.getElementById('loader-status').textContent = '风景已就绪，欢迎光临';

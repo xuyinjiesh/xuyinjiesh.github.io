@@ -38,14 +38,14 @@ button { touch-action: manipulation; }
 [hidden] { display: none !important; }
 
 /* ---- 背景层 ---- */
-/* 壁纸：图片路径由主题注入 --wallpaper（见 js/themes.js），无壁纸时此层为空 */
+/* Bing 图片只在手动应用后覆盖主题壁纸，主题配色与音乐继续生效。 */
 .bg-wallpaper {
   position: fixed; inset: 0;
-  background: var(--wallpaper, none) center / cover no-repeat;
+  background: var(--bing-wallpaper, var(--wallpaper, none)) center / cover no-repeat;
   opacity: 0;
   transition: opacity .8s ease;
 }
-html[data-wallpaper] .bg-wallpaper { opacity: 1; }
+html[data-wallpaper] .bg-wallpaper, html[data-bing-wallpaper] .bg-wallpaper { opacity: 1; }
 .bg-gradient {
   position: fixed; inset: 0;
   background:
@@ -54,7 +54,7 @@ html[data-wallpaper] .bg-wallpaper { opacity: 1; }
   animation: breathe 14s ease-in-out infinite alternate;
 }
 /* 有壁纸时渐变退为半透明叠加色：保留主题色调，让壁纸透出来 */
-html[data-wallpaper] .bg-gradient {
+html[data-wallpaper] .bg-gradient, html[data-bing-wallpaper] .bg-gradient {
   background:
     radial-gradient(120% 90% at 70% 10%, color-mix(in srgb, var(--bg-1) 10%, transparent), transparent 70%),
     linear-gradient(160deg, transparent, color-mix(in srgb, var(--bg-2) 18%, transparent));
@@ -440,7 +440,7 @@ html[data-loading] .page-loader { visibility: visible; opacity: 1; pointer-event
 /* ---- 风景收藏：日期自动匹配，也可手动切换 ---- */
 .theme-dialog { margin: auto; width: min(740px, calc(100% - 32px)); max-height: min(840px, calc(100dvh - 48px)); padding: 30px; border: 1px solid var(--hairline); border-radius: 24px; color: var(--text); background: color-mix(in srgb, var(--bg-2) 95%, #fff); box-shadow: 0 30px 100px rgba(0,0,0,.3); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--hairline) transparent; }
 .theme-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
-.theme-dialog > :not(.theme-grid) { flex-shrink: 0; }
+.theme-dialog > :not(.theme-grid):not(.bing-panel) { flex-shrink: 0; }
 .theme-dialog::backdrop { background: rgba(5,12,18,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 .theme-dialog-header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
 .theme-dialog h2 { font: 400 28px var(--serif); letter-spacing: .1em; margin-top: 12px; }
@@ -453,7 +453,7 @@ html[data-loading] .page-loader { visibility: visible; opacity: 1; pointer-event
 .auto-theme strong { display: block; font-size: .78rem; font-weight: 500; }
 .auto-theme small { display: block; margin-top: 5px; font-size: .65rem; color: var(--muted); }
 .auto-theme:hover { background: var(--bubble-bg); }
-.theme-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--hairline); margin: 22px 0 18px; }
+.theme-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--hairline); margin: 22px 0 18px; overflow-x: auto; }
 .theme-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 12px 0; font-size: .76rem; cursor: pointer; white-space: nowrap; }
 .theme-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); }
 .theme-tabs button span { font-size: .6rem; margin-left: 5px; opacity: .6; }
@@ -466,6 +466,25 @@ html[data-loading] .page-loader { visibility: visible; opacity: 1; pointer-event
 .theme-tile strong { font: 20px var(--serif); letter-spacing: .12em; text-shadow: 0 1px 8px rgba(0,0,0,.25); }
 .theme-tile small { font-size: .57rem; margin-top: 6px; opacity: .8; letter-spacing: .03em; }
 .theme-dialog-foot { margin-top: 22px; display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .62rem; }
+
+/* ---- Bing 风景：预览与应用分开，默认保留主题壁纸 ---- */
+.bing-panel { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 4px 2px; scrollbar-width: thin; scrollbar-color: var(--hairline) transparent; }
+.bing-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bing-heading h3 { margin-top: 8px; font: 400 23px var(--serif); letter-spacing: .08em; }
+.bing-badge { flex-shrink: 0; border: 1px solid var(--hairline); border-radius: 20px; padding: 5px 10px; color: var(--accent); font-size: .63rem; }
+.bing-copy { margin: 10px 0 16px; color: var(--muted); font-size: .73rem; line-height: 1.7; }
+.bing-preview { position: relative; display: grid; place-items: center; width: min(100%, 420px); margin-inline: auto; aspect-ratio: 16 / 9; border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden; background: linear-gradient(145deg, var(--bg-1), var(--bg-2)); }
+.bing-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.bing-preview > p { padding: 20px; color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-align: center; }
+.bing-preview[aria-busy="true"]::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg-2) 25%, transparent); pointer-events: none; }
+.bing-status { margin: 12px 0; color: var(--muted); font-size: .68rem; line-height: 1.7; }
+.bing-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.bing-actions button { border: 1px solid var(--hairline); border-radius: 9px; padding: 10px 14px; background: transparent; color: var(--text); font-size: .7rem; cursor: pointer; }
+.bing-actions button:hover:not(:disabled) { background: var(--bubble-bg); border-color: var(--accent); }
+.bing-actions .bing-apply { background: var(--accent); border-color: var(--accent); color: var(--bg-2); }
+.bing-actions button:disabled { opacity: .45; cursor: default; }
+.bing-credit { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; font-size: .6rem; line-height: 1.7; color: var(--muted); }
+.bing-credit a { color: inherit; text-underline-offset: 3px; }
 
 /* ---- 无障碍 ---- */
 .sr-only {

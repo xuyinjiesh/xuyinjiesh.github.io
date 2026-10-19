@@ -112,9 +112,22 @@
       <button type="button" role="tab" id="tab-term" aria-controls="theme-grid" aria-selected="true" data-category="term">二十四节气 <span>24</span></button>
       <button type="button" role="tab" id="tab-festival" aria-controls="theme-grid" aria-selected="false" tabindex="-1" data-category="festival">节日 <span>19</span></button>
       <button type="button" role="tab" id="tab-daily" aria-controls="theme-grid" aria-selected="false" tabindex="-1" data-category="daily">日常 <span>6</span></button>
+      <button type="button" role="tab" id="tab-bing" aria-controls="bing-panel" aria-selected="false" tabindex="-1" data-category="bing">Bing 壁纸</button>
     </div>
     <div id="theme-grid" class="theme-grid" role="tabpanel" aria-labelledby="tab-term" tabindex="0"></div>
-    <p class="theme-dialog-foot">轻触选择，即刻抵达。<span id="theme-selection-status" role="status"></span></p>
+    <section id="bing-panel" class="bing-panel" role="tabpanel" aria-labelledby="tab-bing" tabindex="0" hidden>
+      <div class="bing-heading"><div><p class="eyebrow">A WINDOW TO SOMEWHERE</p><h3>偶遇一帧远方</h3></div><span id="bing-active" class="bing-badge" hidden>正在使用</span></div>
+      <p class="bing-copy">随机遇见 Bing 的一处风景，喜欢再设为背景。</p>
+      <div id="bing-preview" class="bing-preview" aria-busy="false"><p id="bing-placeholder">风景会出现在这里</p></div>
+      <p id="bing-status" class="bing-status" role="status">选一帧风景，送给此刻。</p>
+      <div class="bing-actions">
+        <button id="bing-random" type="button">随机一张</button>
+        <button id="bing-apply" class="bing-apply" type="button" disabled>设为背景</button>
+        <button id="bing-reset" type="button" disabled>恢复主题背景</button>
+      </div>
+      <p class="bing-credit"><span>壁纸来自 Bing · <a href="https://uapis.cn/docs/api-reference/get-image-bing-daily" target="_blank" rel="noopener noreferrer">UAPI 提供</a></span><span id="bing-memory">会记住已应用的壁纸</span></p>
+    </section>
+    <p class="theme-dialog-foot"><span id="theme-panel-hint">轻触选择，即刻抵达。</span><span id="theme-selection-status" role="status"></span></p>
   </dialog>
 
   <!-- 无障碍 / SEO：核心内容以语义化 HTML 直出，视觉上隐藏。
@@ -156,6 +169,7 @@
   <script src="js/spire.js"></script>
   <script src="js/note.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/bing-wallpaper.js"></script>
   <script src="js/appearance.js"></script>
   <script>window.applyIdentity();</script>
 </body>
