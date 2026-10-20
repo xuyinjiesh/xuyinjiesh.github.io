@@ -360,6 +360,27 @@ html[data-loading] .site-content { opacity: 0; transform: translateY(12px); }
 .quick-replies button:disabled:active { transform: none; }
 .bubble pre.chart.spire { line-height: 1.5; font-size: .78rem; }
 
+/* 遗物只展开当前需要比较的内容，行囊随时可查看。 */
+.sd-build { padding: 6px 8px; border: 1px solid var(--hairline); border-radius: 8px; font-size: .7rem; }
+.sd-build summary { cursor: pointer; color: var(--accent); line-height: 1.6; }
+.sd-build summary > span { color: var(--text-dim); font-size: .63rem; margin-left: 5px; }
+.sd-build[open] .sd-relic-card { margin-top: 6px; }
+.sd-section-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px; padding-top: 3px; }
+.sd-section-title > strong { font-size: .8rem; font-weight: 600; }
+.sd-section-title > span { font-size: .62rem; color: var(--text-dim); }
+.sd-offers { display: grid; gap: 7px; }
+.sd-offer { display: flex; gap: 7px; align-items: flex-start; }
+.sd-offer-number { flex: 0 0 18px; height: 18px; display: grid; place-items: center; margin-top: 9px; border: 1px solid var(--hairline); border-radius: 4px; color: var(--accent); font-size: .64rem; }
+.sd-relic-card { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--accent) 23%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.sd-relic-card > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.sd-relic-card strong { font-size: .76rem; font-weight: 600; }
+.sd-tag { font-size: .58rem; color: var(--accent); }
+.sd-relic-card p { margin-top: 3px; font-size: .68rem; line-height: 1.6; }
+.sd-relic-card small { display: block; margin-top: 3px; font-size: .61rem; line-height: 1.55; color: var(--text-dim); }
+.sd-effects { display: flex; flex-wrap: wrap; gap: 8px; color: var(--accent); font-size: .67rem; }
+.sd-log summary { margin-top: 3px; cursor: pointer; font-size: .64rem; }
+.quick-replies.spire-controls { max-height: 210px; overflow-y: auto; scrollbar-width: thin; }
+
 /* ---- 快捷回复：主入口 ---- */
 .quick-replies {
   display: flex; flex-wrap: wrap; gap: .5rem;
@@ -644,4 +665,15 @@ html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-mo
   .sd-room { padding-inline: 6px; }
   .sd-room-tag { font-size: .52rem; }
   .sd-room-desc { font-size: .6rem; }
+}
+
+/* 游戏期间给战况与奖励比较留出空间。 */
+.chat-window.spire-active .conversation-heading,
+.chat-window.spire-active .composer-note { display: none; }
+.quick-replies.spire-controls[data-spire-phase="reward"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.quick-replies.spire-controls[data-spire-phase="reward"] > button { grid-column: span 2; }
+.quick-replies.spire-controls[data-spire-phase="reward"] > button:nth-child(n+4) { grid-column: span 3; }
+.quick-replies.spire-controls[data-spire-phase="reward"] > button:nth-child(-n+3) .sa-desc { display: none; }
+@media (max-height: 500px) and (max-width: 760px) {
+  .quick-replies.spire-controls { max-height: 100px; }
 }

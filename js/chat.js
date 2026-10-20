@@ -371,7 +371,7 @@
   });
 
   // ---- 口袋地牢：房间二选一 + 骰子战斗 ----
-  var SPIRE_KEY = 'homepage.spire.v2';
+  var SPIRE_KEY = 'homepage.spire.v3';
   var spire = null;
   var spireReady = false;
 
@@ -429,6 +429,11 @@
       '<span class="sd-room-desc">' + esc(desc) + '</span></div>';
   }
 
+  function spireRelicCard(relic, upgrading) {
+    return '<div class="sd-relic-card"><div><strong>' + esc(relic.name) + '</strong><span class="sd-tag">' + esc(relic.tag) + '</span></div>' +
+      '<p>' + esc(upgrading ? relic.upgradeDesc : relic.desc) + '</p><small>' + esc(relic.hint) + '</small></div>';
+  }
+
   function spireBoard(run) {
     var v = window.Spire.view(run);
     var h = '<div class="sb sd" data-phase="' + esc(v.phase) + '">';
@@ -442,46 +447,72 @@
     h += '<div class="sb-row sb-me"><span class="sb-who">生命</span>' + spireHpBar(v.hp, v.maxHp) + '</div>';
     h += '<div class="sd-resources"><span>口粮 <b>' + v.food + '</b></span><span>金币 <b>' + v.gold +
       '</b></span><span>武器 <b>+' + v.weapon + '</b></span><span>护甲 <b>' + v.armor + '</b></span><span>药水 <b>' + v.potions + '</b></span></div>';
-    if (v.known) {
-      h += '<div class="sd-rooms">' + spireRoomCard(v.known.icon, '明牌 · 看得见的选择', v.known.name, v.known.desc, false) +
-        spireRoomCard('unknown', '暗牌 · 试试运气', '另一扇门', '也许是补给，也许是危险。推开后必须接受。', true) + '</div>';
+    if (v.relics.length) {
+      h += '<details class="sd-build"' + (v.phase === 'replace' || v.phase === 'upgrade' ? ' open' : '') +
+        '><summary>行囊 ' + v.relics.length + '/3 <span>' + v.relics.map(function (r) { return esc(r.name); }).join(' · ') + '</span></summary>' +
+        v.relics.map(function (r) { return spireRelicCard(r, false); }).join('') + '</details>';
+    }
+    if (v.offers) {
+      h += '<div class="sd-section-title"><strong>' + esc(v.rewardTitle) + '</strong><span>三选一 · 只在本局生效</span></div>' +
+        '<div class="sd-offers">' + v.offers.map(function (r, index) {
+          return '<div class="sd-offer"><span class="sd-offer-number">' + (index + 1) + '</span>' + spireRelicCard(r, false) + '</div>';
+        }).join('') + '</div>';
+    } else if (v.pending) {
+      h += '<div class="sd-section-title"><strong>想带上的新遗物</strong><span>需要腾出一个位置</span></div>' + spireRelicCard(v.pending, false);
+    } else if (v.phase === 'upgrade') {
+      h += '<div class="sd-section-title"><strong>把一次休整留给未来</strong></div><div class="sd-offers">' +
+        v.relics.filter(function (r) { return !r.up; }).map(function (r) { return spireRelicCard(r, true); }).join('') + '</div>';
+    } else if (v.known) {
+      h += '<div class="sd-rooms">' + spireRoomCard(v.known.icon, v.alternative ? '冒险 · 再拿一次奖励' : '明牌 · 看得见的选择', v.known.name, v.known.desc, false) +
+        (v.alternative ? spireRoomCard(v.alternative.icon, '休整 · 回血或强化', v.alternative.name, v.alternative.desc, false) :
+          spireRoomCard('unknown', '暗牌 · 试试运气', '另一扇门', v.room === 1 ? '另一名守卫，胜利后也能选择遗物。' : '也许是补给，也许是危险。推开后必须接受。', true)) + '</div>';
     } else if (v.foe) {
       h += '<div class="sd-enemy"><div class="sd-enemy-head"><strong><span aria-hidden="true">' + spireIcon(v.foe.icon) + '</span> ' + esc(v.foe.name) +
         '</strong><span>第 ' + v.turn + ' 回合</span></div><div class="sb-row sb-foe">' + spireHpBar(v.foe.hp, v.foe.maxHp) +
-        '<span class="sd-enemy-attack">攻击 ' + v.foe.attack + '</span></div></div>';
+        '<span class="sd-enemy-attack">攻击 ' + v.foe.currentAttack + '</span></div>';
+      if (v.foe.burn || v.charge) h += '<div class="sd-effects">' + (v.foe.burn ? '<span>灼烧 ' + v.foe.burn + ' / 回合</span>' : '') +
+        (v.charge ? '<span>下次攻击 +' + v.charge + '</span>' : '') + '</div>';
+      h += '</div>';
     } else if (v.encounter) {
       h += '<div class="sd-encounter"><span aria-hidden="true">' + spireIcon(v.encounter.icon) + '</span><div><strong>' + esc(v.encounter.name) + '</strong><p>' + esc(v.encounter.desc) + '</p></div></div>';
+      if (v.encounter.stock) h += '<div class="sd-section-title"><span>陈列遗物 · 8 金币</span></div>' + spireRelicCard(v.encounter.stock, false);
     } else if (v.phase === 'stairs') {
-      h += '<div class="sd-milestone"><span aria-hidden="true">↟</span><strong>歇一歇，再上一层</strong><p>带上一点成长，前面还有新的房间。</p></div>';
+      h += '<div class="sd-milestone"><span aria-hidden="true">↟</span><strong>歇一歇，再上一层</strong><p>补足眼前的短板，或为下一战增加筹码。</p></div>';
     } else if (v.phase === 'boss') {
-      h += '<div class="sd-milestone"><span aria-hidden="true">♜</span><strong>最后一扇门</strong><p>塔顶守关者，正在等你。</p></div>';
+      h += '<div class="sd-milestone"><span aria-hidden="true">♜</span><strong>最后一扇门</strong><p>让这一局的搭配，接受最后的考验。</p></div>';
     } else {
       h += '<div class="sb-result ' + (v.phase === 'won' ? 'sb-win' : 'sb-lose') + '">' +
         (v.phase === 'won' ? '✦ 满载而归' : '营火，等你再来') + '</div>';
-      h += '<div class="sd-summary">探索 ' + v.cleared + ' 间房 · 击败 ' + v.kills + ' 个敌人 · 带回 ' + (v.phase === 'won' ? v.gold : 0) + ' 金币</div>';
+      h += '<div class="sd-summary">探索 ' + v.cleared + ' 间房 · 击败 ' + v.elites + ' 名精英 · 带回 ' + (v.phase === 'won' ? v.gold : 0) + ' 金币</div>';
     }
     if (v.roll) {
-      h += '<div class="sd-roll"><span>' + esc(v.roll.purpose) + '</span><span class="sd-dice">' + v.roll.values.map(function (n) {
-        return spireDie(n);
-      }).join('') + '</span></div>';
+      h += '<div class="sd-roll"><span>' + esc(v.roll.purpose) + '</span><span class="sd-dice">' + v.roll.values.map(spireDie).join('') + '</span></div>';
     }
-    if (v.log.length) h += '<div class="sd-log">' + v.log.map(function (line) { return '<p>' + esc(line) + '</p>'; }).join('') + '</div>';
+    if (v.log.length) {
+      h += '<div class="sd-log">' + v.log.slice(-2).map(function (line) { return '<p>' + esc(line) + '</p>'; }).join('');
+      if (v.log.length > 2) h += '<details><summary>查看完整结算 · ' + v.log.length + ' 条</summary>' +
+        v.log.map(function (line) { return '<p>' + esc(line) + '</p>'; }).join('') + '</details>';
+      h += '</div>';
+    }
     h += '<p class="sb-note">' + esc(v.note) + '</p>';
-    h += '<details class="sd-rules"><summary>玩法小抄<span>种子 ' + v.seed + '</span></summary><p>' + esc(v.rules) + '</p>' +
-      '<p>点下方按钮，或输入按钮前的数字。随时「暂存离开」，下次说「爬塔」继续。</p></details>';
+    h += '<details class="sd-rules"><summary>路线与玩法小抄<span>种子 ' + v.seed + '</span></summary><p>' + esc(v.rules) + '</p>' +
+      '<p>点下方按钮，或输入按钮前的数字。随时「暂存离开」，下次说「爬塔」继续。每次重开都会清空遗物与成长。</p></details>';
     return h + '</div>';
   }
 
   function spireRender(run) {
     var snapshot = run;
     renderQuickReplies(window.Spire.actions(run).map(function (a, index) {
-      var utility = a.id === 'potion' || a.id === 'quit';
+      var utility = a.id === 'potion' || a.id === 'quit' || a.id === 'back';
+      var shortDesc = a.desc;
+      if (a.id.indexOf('take:') === 0) shortDesc = a.desc.split(' · ')[0] + ' · 放入行囊';
+      if (a.id.indexOf('upgrade:') === 0 && !a.disabled) shortDesc = '强化效果见上方';
       return {
         label: (index + 1) + ' ' + a.label,
         cls: 'spire-action' + (utility ? ' sa-utility' : ' sa-choice'),
         disabled: a.disabled || !spireReady,
         html: '<span class="sa-title"><small>' + (index + 1) + '</small><b>' + esc(a.name) + '</b></span>' +
-          (a.desc ? '<span class="sa-desc">' + esc(a.desc) + '</span>' : ''),
+          (shortDesc ? '<span class="sa-desc">' + esc(shortDesc) + '</span>' : ''),
         action: function () { if (spire === snapshot) spireAct(a.id); }
       };
     }));
@@ -527,7 +558,7 @@
     spireSave();
     spireRender(spire);
     return [
-      '提灯出发！这次是三层的「口袋地牢」：选房间、掷骰战斗、留点口粮上楼，最后击败塔顶守关者。点下方按钮就能玩，规则随时看面板里的「玩法小抄」。',
+      '这次从零搭一套自己的打法。遗物只能带三件：先拿能过关的，还是留位置等组合？每层都有战斗奖励，末尾可选精英或营火。先挑一件带上，点数字按钮即可行动。',
       spirePanel(spire)
     ];
   }
@@ -558,10 +589,10 @@
         '，口粮 ' + saved.food + '，金币 ' + saved.gold + '。继续这局，还是重新出发？'];
     }
     var legacy = null;
-    try { legacy = JSON.parse(localStorage.getItem('homepage.spire.v1')); } catch (e) {}
+    try { legacy = JSON.parse(localStorage.getItem('homepage.spire.v2') || localStorage.getItem('homepage.spire.v1')); } catch (e) {}
     var opening = spireBegin();
-    if (!saved && legacy && legacy.deck && !spireFinished(legacy)) {
-      opening.unshift('爬塔已换成轻量的骰子地牢。旧版卡牌存档已保留，但无法按新规则续玩；这次会单独保存。');
+    if (!saved && legacy && !spireFinished(legacy)) {
+      opening.unshift('这次加入了遗物构筑与精英路线。旧版存档已保留，新规则需要从头开始，这局会单独保存。');
     }
     return opening;
   }
@@ -702,7 +733,7 @@
       if (/^(不玩了|退出|放弃|quit|stop)$/i.test(text)) { spireAct('quit'); return; }
       var spireMove = window.Spire ? window.Spire.matchText(spire, text) : null;
       if (spireMove) { spireAct(spireMove); return; }
-      botSay(['还在地牢里。点下方按钮，或输入按钮前的数字，也可以说「攻击」「强攻」「喝药」。输入「不玩了」会暂存离开。']);
+      botSay(['还在地牢里。点下方按钮，或输入按钮前的数字，也可以说「攻击」「强攻」「防守」「喝药」。输入「不玩了」会暂存离开。']);
       return;
     }
     // 任何输入都先悄悄试一次口令；命中则原地切到隐藏主题，未命中走正常路由
@@ -729,7 +760,11 @@
 
   function renderQuickReplies(items) {
     $quick.innerHTML = '';
-    $quick.classList.toggle('spire-controls', !!(spire && items));
+    var inSpire = !!(spire && items);
+    $quick.classList.toggle('spire-controls', inSpire);
+    $quick.closest('.chat-window').classList.toggle('spire-active', inSpire);
+    if (inSpire) $quick.dataset.spirePhase = spire.phase;
+    else delete $quick.dataset.spirePhase;
     (items && items.length ? items : theme.quickReplies.concat(noteEntry())).forEach(function (q) {
       var btn = document.createElement('button');
       btn.type = 'button';
